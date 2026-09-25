@@ -59,3 +59,36 @@ extension Severity: Codable {
         self = Severity(rawValue: raw) ?? .unknown
     }
 }
+
+/// Which quota source is currently being displayed. `.claude` is Claude
+/// Code's own usage; the `antigravity*` cases mirror the model groups
+/// Antigravity's local quota API reports (see `AntigravityQuotaParser`).
+public enum UsageSource: String, CaseIterable, Sendable, Equatable {
+    case claude
+    case antigravityGemini = "ag.gemini"
+    case antigravityOther = "ag.3p"
+}
+
+/// Picks whichever source is "tightest" — closest to running out — among a
+/// set of candidate snapshots, so "Auto" mode can surface the number that
+/// most needs the user's attention.
+public enum UsageSourceSelector {
+
+    /// Returns the source whose `max(session, weekly)` used-fraction is
+    /// highest. Ties keep the earliest candidate in `candidates` (stable by
+    /// input order). Returns `nil` for an empty list.
+    public static func tightest(_ candidates: [(UsageSource, UsageSnapshot)]) -> UsageSource? {
+        var best: (source: UsageSource, value: Double)?
+        for (source, snapshot) in candidates {
+            let value = max(snapshot.session?.fraction ?? 0, snapshot.weekly?.fraction ?? 0)
+            if let currentBest = best {
+                if value > currentBest.value {
+                    best = (source, value)
+                }
+            } else {
+                best = (source, value)
+            }
+        }
+        return best?.source
+    }
+}

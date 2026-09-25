@@ -55,7 +55,7 @@ struct WidgetRootView: View {
         .onChange(of: miniMode) { onResize(.zero) }
         .onChange(of: theme) { onResize(.zero) }
         .onChange(of: store.accountManager.mode) { onResize(.zero) }
-        .onChange(of: store.snapshot == nil) { onResize(.zero) }
+        .onChange(of: store.displayedSnapshot == nil) { onResize(.zero) }
         .onChange(of: backgroundOpacity) { onInvalidateShadow() }
         .contextMenu {
             Button(miniMode ? "Expand" : "Minimize") {
@@ -158,31 +158,57 @@ struct WidgetView: View {
 
     /// Linked, but no token / token rejected and nothing to show yet.
     private var needsLoginWithoutData: Bool {
-        if case .needsLogin = store.status, store.snapshot == nil { return true }
+        if case .needsLogin = store.status, store.displayedSnapshot == nil { return true }
         return false
+    }
+
+    private var isAntigravityUnavailable: Bool {
+        store.provider == .antigravity && store.antigravityStatus != .ok
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14 * s) {
             header
 
-            if isLinked && !needsLoginWithoutData {
-                VStack(spacing: 10 * s) {
-                    MetricCard(
-                        label: "Current",
-                        window: store.snapshot?.session,
-                        now: store.now,
-                        dimmed: isStale
-                    )
-                    MetricCard(
-                        label: "Weekly",
-                        window: store.snapshot?.weekly,
-                        now: store.now,
-                        dimmed: isStale
-                    )
+            switch store.provider {
+            case .claude:
+                if isLinked && !needsLoginWithoutData {
+                    VStack(spacing: 10 * s) {
+                        MetricCard(
+                            label: "Current",
+                            window: store.displayedSnapshot?.session,
+                            now: store.now,
+                            dimmed: isStale
+                        )
+                        MetricCard(
+                            label: "Weekly",
+                            window: store.displayedSnapshot?.weekly,
+                            now: store.now,
+                            dimmed: isStale
+                        )
+                    }
+                } else {
+                    linkAccountSection
                 }
-            } else {
-                linkAccountSection
+            case .antigravity:
+                if isAntigravityUnavailable {
+                    antigravityUnavailableSection
+                } else {
+                    VStack(spacing: 10 * s) {
+                        MetricCard(
+                            label: "Current",
+                            window: store.displayedSnapshot?.session,
+                            now: store.now,
+                            dimmed: false
+                        )
+                        MetricCard(
+                            label: "Weekly",
+                            window: store.displayedSnapshot?.weekly,
+                            now: store.now,
+                            dimmed: false
+                        )
+                    }
+                }
             }
 
             footer
@@ -213,9 +239,18 @@ struct WidgetView: View {
             Image(systemName: "gauge.with.dots.needle.33percent")
                 .font(.system(size: 13 * s, weight: .semibold))
                 .foregroundStyle(.white)
-            Text("Usage")
-                .font(.system(size: 13 * s, weight: .bold))
-                .foregroundStyle(.white)
+            Button(action: { store.toggleProvider() }) {
+                HStack(spacing: 3 * s) {
+                    Text(store.providerLabel(pixel: false))
+                        .font(.system(size: 13 * s, weight: .bold))
+                        .foregroundStyle(.white)
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 8 * s, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            .buttonStyle(.plain)
+            .help(store.providerSwitchHelp)
             Spacer()
             Button(action: onMinimize) {
                 Image(systemName: "minus")
@@ -263,11 +298,31 @@ struct WidgetView: View {
         }
     }
 
+    private var antigravityUnavailableSection: some View {
+        VStack(alignment: .leading, spacing: 6 * s) {
+            Text("Antigravity not open")
+                .font(.system(size: 14 * s, weight: .semibold))
+                .foregroundStyle(.white)
+            Text("Open the app, then wait a moment.")
+                .font(.system(size: 10 * s))
+                .foregroundStyle(.white.opacity(0.6))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 18 * s)
+    }
+
     private func requestShowSettings() {
         NotificationCenter.default.post(name: .usageWidgetShowSettings, object: nil)
     }
 
     private var statusColor: Color {
+        if store.provider == .antigravity {
+            switch store.antigravityStatus {
+            case .ok: return UsageColor.green
+            case .notRunning: return UsageColor.yellow
+            case .error: return UsageColor.red
+            }
+        }
         switch store.status {
         case .ok: return UsageColor.green
         case .loading, .stale: return UsageColor.yellow
@@ -283,6 +338,21 @@ struct WidgetView: View {
     }
 
     private var footerText: String {
+        if store.provider == .antigravity {
+            switch store.antigravityStatus {
+            case .notRunning:
+                return "Open Antigravity"
+            case .error(let message):
+                return message
+            case .ok:
+                let group = store.antigravityGroupShortLabel.map { " · \($0)" } ?? ""
+                if let lastUpdated = store.antigravityLastUpdated {
+                    let seconds = max(0, Int(store.now.timeIntervalSince(lastUpdated)))
+                    return "Updated \(seconds)s ago\(group)"
+                }
+                return "Updated just now\(group)"
+            }
+        }
         switch store.status {
         case .loading:
             return "Loading…"

@@ -23,6 +23,7 @@ used up the pet simply goes on vacation until the reset.
 - Floating widget on every Space and over full-screen apps; never steals focus
 - **Mini mode**, adjustable size (70–160%) and background opacity
 - Classic theme if you prefer plain bars
+- **Antigravity support**: reads quota from the running Antigravity app over 127.0.0.1. Pick Claude Code or Antigravity in Settings, or tap the title on the widget to switch — only one provider is ever shown (and polled) at a time
 - Native Swift/SwiftUI, no third-party dependencies
 
 ## Requirements
@@ -56,6 +57,7 @@ Enable **Settings → General → Launch at Login** to start it automatically.
 - **Widget**: drag to move, `–` to minimize, double-click to switch between full and mini, right-click for more.
 - **Settings → Appearance**: theme (Pixel Pet or Classic), widget size (70–160%), background opacity.
 - **Settings → Account**: link with your Claude Code login, sign in to Claude Code, paste a token, or unlink.
+- **Settings → Providers**: pick Claude Code or Antigravity in Settings, or tap the title on the widget to switch. While Antigravity is active, choose which model group it shows (Auto/Gemini/Claude & GPT). The menu bar's Provider picker offers the same choice.
 
 ## How it works
 
@@ -72,6 +74,7 @@ and has no login screen of its own.
 
 - The token is only used for that request's `Authorization` header. It is never logged,
   written to disk, or sent anywhere other than `api.anthropic.com`.
+- **Antigravity is local-only.** While selected as the active provider, UsagePet reads the running Antigravity app's own process arguments to find its local CSRF token (never printed or logged), and talks only to that app's own server on `127.0.0.1`. It never contacts Google or any other network host. Only the active provider is ever polled — switching to Claude Code stops all Antigravity requests, and switching to Antigravity stops all Claude Code requests and Keychain reads.
 - No analytics, telemetry, or update checks. No other network traffic (enforced in CI).
 - The "Claude Code running" mood only checks file modification times under
   `~/.claude/projects`; it never reads their contents.
@@ -89,6 +92,7 @@ See [SECURITY.md](SECURITY.md) for details and how to report a vulnerability.
 
 - The usage endpoint is **undocumented**. It can change or disappear at any time, and the
   widget will then show its last known values until it's updated.
+- Antigravity's local quota protocol is similarly **internal and undocumented** — it was reverse-engineered from the running app and may change or break without notice.
 - Using Claude Code's token from another app may not be covered by Anthropic's terms.
   Review them and use this at your own risk.
 - UsagePet does not refresh tokens. If Claude Code's token expires, open Claude Code once

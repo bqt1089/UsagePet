@@ -14,6 +14,13 @@ There is no analytics, telemetry or auto-update, and no other network traffic.
 CI enforces this: `scripts/check-network-hosts.sh` fails the build if the code references
 any host outside a short allowlist.
 
+## Antigravity provider
+
+- UsagePet shows exactly one usage provider at a time — Claude Code or Antigravity — chosen in **Settings → Providers** (or by tapping the title on the widget). Only the active provider is ever polled: while Claude Code is active, Antigravity's `ps`/`lsof`/local requests never run; while Antigravity is active, Claude Code's API requests and Keychain reads never run.
+- While Antigravity is active, it reads the running Antigravity app's own process arguments (via `ps`/`lsof`) to find its local `--csrf_token`; that token is never logged or printed.
+- Talks only to that same app's own local server on `127.0.0.1` — it never contacts Google or any other host, and the request never leaves your Mac.
+- This is an internal, undocumented protocol reverse-engineered from the running app; it may change or stop working without notice.
+
 ## Only install from the official repository
 
 Because the code is MIT-licensed, anyone can publish a modified copy. A malicious fork could

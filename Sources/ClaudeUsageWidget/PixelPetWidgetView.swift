@@ -15,13 +15,25 @@ struct PixelPetWidgetView: View {
     let onMinimize: () -> Void
 
     private var isStale: Bool {
+        guard store.provider == .claude else { return false }
         if case .stale = store.status { return true }
         return false
     }
     private var isLinked: Bool { store.accountManager.mode != .notLinked }
     private var needsLoginWithoutData: Bool {
-        if case .needsLogin = store.status, store.snapshot == nil { return true }
+        if case .needsLogin = store.status, store.displayedSnapshot == nil { return true }
         return false
+    }
+    /// Antigravity is active but not answering (app not open, or an error).
+    private var isAntigravityUnavailable: Bool {
+        store.provider == .antigravity && store.antigravityStatus != .ok
+    }
+    /// Whether the bars area should show real numbers right now.
+    private var showsBars: Bool {
+        switch store.provider {
+        case .claude: return isLinked && !needsLoginWithoutData
+        case .antigravity: return !isAntigravityUnavailable
+        }
     }
 
     var body: some View {
@@ -70,34 +82,59 @@ struct PixelPetWidgetView: View {
                 .reportPetFrame()
                 .frame(height: 92 * s)
 
-            if isLinked && !needsLoginWithoutData {
+            if showsBars {
                 VStack(alignment: .leading, spacing: 10 * s) {
                     PixelBarRow(
                         label: "CURRENT",
-                        fraction: store.snapshot?.session?.fraction ?? 0,
+                        fraction: store.displayedSnapshot?.session?.fraction ?? 0,
                         resetText: currentResetText
                     )
                     PixelBarRow(
                         label: "WEEKLY",
-                        fraction: store.snapshot?.weekly?.fraction ?? 0,
+                        fraction: store.displayedSnapshot?.weekly?.fraction ?? 0,
                         resetText: weeklyResetText
                     )
                 }
                 .opacity(isStale ? 0.5 : 1.0)
+            } else if isAntigravityUnavailable {
+                antigravityUnavailableSection
             } else {
                 linkAccountSection
             }
 
-            pixelText(moodStatusLine(mood: mood, time: time), size: 11 * s, color: LCD.accent)
+            pixelText(statusLineText(mood: mood, time: time), size: 11 * s, color: LCD.accent)
                 .lineLimit(1)
         }
     }
 
+    private func statusLineText(mood: PetMood, time: Double) -> String {
+        if isAntigravityUnavailable {
+            if case .error = store.antigravityStatus {
+                return "* Antigravity: can't read quota"
+            }
+            return "* Open Antigravity"
+        }
+        let base = moodStatusLine(mood: mood, time: time)
+        if store.provider == .antigravity, let suffix = store.antigravityGroupPixelSuffix {
+            return base + " ·" + suffix
+        }
+        return base
+    }
+
     private func header(time: Double) -> some View {
         HStack(spacing: 6 * s) {
-            pixelText("USAGE", size: 13 * s, bold: true, color: LCD.ink)
+            Button(action: { store.toggleProvider() }) {
+                HStack(spacing: 3 * s) {
+                    pixelText(store.providerLabel(pixel: true), size: 13 * s, bold: true, color: LCD.ink)
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 7 * s, weight: .bold))
+                        .foregroundStyle(LCD.inkDim)
+                }
+            }
+            .buttonStyle(.plain)
+            .help(store.providerSwitchHelp)
             Spacer()
-            BatteryIcon(weekly: store.snapshot?.weekly?.fraction, time: time, charging: store.currentMood == .love)
+            BatteryIcon(weekly: store.displayedSnapshot?.weekly?.fraction, time: time, charging: store.currentMood == .love)
             Button(action: onMinimize) {
                 Image(systemName: "minus")
                     .font(.system(size: 9 * s, weight: .bold))
@@ -184,11 +221,30 @@ struct PixelPetWidgetView: View {
         }
     }
 
+    private var antigravityUnavailableSection: some View {
+        VStack(alignment: .leading, spacing: 4 * s) {
+            pixelText("ANTIGRAVITY NOT OPEN", size: 11 * s, bold: true, color: LCD.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            pixelText("Open the app, then wait a moment", size: 8 * s, color: LCD.inkDim)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+        .padding(.vertical, 10 * s)
+    }
+
     private func requestShowSettings() {
         NotificationCenter.default.post(name: .usageWidgetShowSettings, object: nil)
     }
 
     private var statusColor: Color {
+        if store.provider == .antigravity {
+            switch store.antigravityStatus {
+            case .ok: return UsageColor.green
+            case .notRunning: return UsageColor.yellow
+            case .error: return UsageColor.red
+            }
+        }
         switch store.status {
         case .ok: return UsageColor.green
         case .loading, .stale: return UsageColor.yellow
@@ -198,7 +254,7 @@ struct PixelPetWidgetView: View {
     }
 
     private var currentResetText: String {
-        guard let window = store.snapshot?.session else { return "resets in --" }
+        guard let window = store.displayedSnapshot?.session else { return "resets in --" }
         if window.fraction >= 1.0 {
             guard let resetsAt = window.resetsAt else { return "limited · --" }
             return "limited · \(Formatting.countdown(to: resetsAt, now: store.now))"
@@ -208,7 +264,7 @@ struct PixelPetWidgetView: View {
     }
 
     private var weeklyResetText: String {
-        guard let window = store.snapshot?.weekly else { return "resets in --" }
+        guard let window = store.displayedSnapshot?.weekly else { return "resets in --" }
         guard let resetsAt = window.resetsAt else { return "resets in --" }
         if window.fraction >= 1.0 {
             return "back in \(Formatting.countdown(to: resetsAt, now: store.now))"

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Antigravity usage provider**: reads quota from the running Antigravity desktop app over
+  its own local server (`127.0.0.1`, read-only).
+- **Provider switching**: pick Claude Code or Antigravity in **Settings → Providers**, or tap
+  the title on the widget to switch instantly. Exactly one provider is shown — and polled — at
+  a time; switching stops the other provider's requests immediately.
+- **Antigravity model groups**: while Antigravity is active, choose which group it shows —
+  Auto (whichever of Gemini / Claude & GPT is closest to its limit), Gemini, or Claude & GPT —
+  in **Settings → Providers**.
+
+### Changed
+- Replaced the old multi-select "Providers" toggles and "auto" source picker with a single
+  provider choice. If Antigravity was previously enabled, the widget now defaults back to
+  showing Claude Code until you pick Antigravity again.
+- When Antigravity is active but the app isn't open (or its local API errors), the widget no
+  longer falls back to Claude Code — it shows a "not open" state and keeps polling in the
+  background so it recovers on its own once you open Antigravity.
+
 ## v0.2.0 — weekly battery
 
 ### Added

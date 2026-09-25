@@ -14,10 +14,20 @@ struct PixelPetMiniView: View {
     let onExpand: () -> Void
 
     private var isStale: Bool {
+        guard store.provider == .claude else { return false }
         if case .stale = store.status { return true }
         return false
     }
-    private var isLinked: Bool { store.accountManager.mode != .notLinked }
+    /// Whether there's real usage data to show for the active provider.
+    private var hasData: Bool {
+        switch store.provider {
+        case .claude: return store.accountManager.mode != .notLinked
+        case .antigravity: return store.antigravityStatus == .ok
+        }
+    }
+    private var placeholderLabel: String {
+        store.provider == .claude ? "NOT LINKED" : "AG NOT OPEN"
+    }
 
     var body: some View {
         let mood = store.currentMood
@@ -43,16 +53,16 @@ struct PixelPetMiniView: View {
                 .reportPetFrame()
                         .frame(width: 40 * s, height: 40 * s)
 
-                    if isLinked {
+                    if hasData {
                         VStack(alignment: .leading, spacing: 3 * s) {
                             HStack(alignment: .firstTextBaseline) {
-                                pixelText(Formatting.percent(store.snapshot?.session?.fraction ?? 0), size: 14 * s, bold: true, color: LCD.ink)
+                                pixelText(Formatting.percent(store.displayedSnapshot?.session?.fraction ?? 0), size: 14 * s, bold: true, color: LCD.ink)
                                 Spacer()
                             }
                             HStack(spacing: 1 * s) {
                                 ForEach(0..<24, id: \.self) { i in
                                     Rectangle()
-                                        .fill(i < filledSegments ? UsageColor.forFraction(store.snapshot?.session?.fraction ?? 0, severity: .unknown) : LCD.barOff)
+                                        .fill(i < filledSegments ? UsageColor.forFraction(store.displayedSnapshot?.session?.fraction ?? 0, severity: .unknown) : LCD.barOff)
                                         .frame(height: 5 * s)
                                 }
                             }
@@ -60,7 +70,7 @@ struct PixelPetMiniView: View {
                         }
                         .opacity(isStale ? 0.5 : 1.0)
                     } else {
-                        pixelText("NOT LINKED", size: 10 * s, color: LCD.inkDim)
+                        pixelText(placeholderLabel, size: 10 * s, color: LCD.inkDim)
                         Spacer()
                     }
 
@@ -70,8 +80,8 @@ struct PixelPetMiniView: View {
                 .padding(.vertical, 8 * s)
             }
             .overlay(alignment: .topTrailing) {
-                if isLinked {
-                    BatteryIcon(weekly: store.snapshot?.weekly?.fraction, time: t, charging: mood == .love, showsLabel: false, compact: true)
+                if hasData {
+                    BatteryIcon(weekly: store.displayedSnapshot?.weekly?.fraction, time: t, charging: mood == .love, showsLabel: false, compact: true)
                         .padding(.top, 5 * s)
                         .padding(.trailing, 9 * s)
                 }
@@ -139,12 +149,12 @@ struct PixelPetMiniView: View {
     }
 
     private var filledSegments: Int {
-        let fraction = store.snapshot?.session?.fraction ?? 0
+        let fraction = store.displayedSnapshot?.session?.fraction ?? 0
         return Int((min(max(fraction, 0), 1) * 24).rounded())
     }
 
     private var resetText: String {
-        guard let window = store.snapshot?.session, let resetsAt = window.resetsAt else { return "resets in --" }
+        guard let window = store.displayedSnapshot?.session, let resetsAt = window.resetsAt else { return "resets in --" }
         if window.fraction >= 1.0 {
             return "limited · \(Formatting.countdown(to: resetsAt, now: store.now))"
         }

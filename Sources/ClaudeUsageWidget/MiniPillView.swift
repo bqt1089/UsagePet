@@ -13,15 +13,25 @@ struct MiniPillView: View {
     let onExpand: () -> Void
 
     private var isStale: Bool {
+        guard store.provider == .claude else { return false }
         if case .stale = store.status { return true }
         return false
     }
 
+    private var placeholderText: String? {
+        switch store.provider {
+        case .claude:
+            return store.accountManager.mode == .notLinked ? "Not linked" : nil
+        case .antigravity:
+            return store.antigravityStatus == .ok ? nil : "AG not open"
+        }
+    }
+
     var body: some View {
         Group {
-            if store.accountManager.mode == .notLinked {
+            if let placeholderText {
                 HStack {
-                    Text("Not linked")
+                    Text(placeholderText)
                         .font(.system(size: 12 * s, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.6))
                     Spacer()
@@ -30,7 +40,7 @@ struct MiniPillView: View {
             } else {
                 MetricCard(
                     label: "Current",
-                    window: store.snapshot?.session,
+                    window: store.displayedSnapshot?.session,
                     now: store.now,
                     dimmed: isStale,
                     onExpand: onExpand

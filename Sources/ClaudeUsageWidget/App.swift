@@ -44,6 +44,10 @@ struct SettingsView: View {
                 AccountSection()
             }
 
+            Section("Providers") {
+                ProvidersSection()
+            }
+
             Section("Appearance") {
                 Picker("Theme", selection: $theme) {
                     Text("Pixel Pet").tag(WidgetTheme.pixel.rawValue)
@@ -210,6 +214,46 @@ private struct AccountSection: View {
     }
 }
 
+/// "Providers" section of Settings: exactly one usage source feeds the
+/// widget at a time. Claude Code needs linking in Account above; Antigravity
+/// just needs the app open (read-only, local server on 127.0.0.1 only).
+@MainActor
+private struct ProvidersSection: View {
+    @Environment(UsageStore.self) private var store
+    @AppStorage("provider") private var provider = UsageStore.Provider.claude.rawValue
+    @AppStorage("antigravityGroup") private var antigravityGroup = "auto"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Show usage from", selection: $provider) {
+                Text("Claude Code").tag(UsageStore.Provider.claude.rawValue)
+                Text("Antigravity").tag(UsageStore.Provider.antigravity.rawValue)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 320)
+
+            if provider == UsageStore.Provider.claude.rawValue, store.accountManager.mode == .notLinked {
+                Text("Link your Claude account above to see usage.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("Antigravity models", selection: $antigravityGroup) {
+                Text("Auto (tightest)").tag("auto")
+                Text("Gemini").tag("gemini")
+                Text("Claude & GPT").tag("3p")
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 320)
+            .disabled(provider != UsageStore.Provider.antigravity.rawValue)
+
+            Text("Antigravity must be open. UsagePet only talks to its local server on 127.0.0.1.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 /// "Launch at Login" toggle backed by `SMAppService`. Only works when
 /// running the installed .app bundle (not `swift run`), since that's the
 /// only way macOS has a stable bundle identifier/path to register.
@@ -262,7 +306,7 @@ private struct MenuBarLabel: View {
     @Environment(UsageStore.self) private var store
 
     var body: some View {
-        let percentText = store.snapshot?.session.map { Formatting.percent($0.fraction) } ?? "--%"
+        let percentText = store.displayedSnapshot?.session.map { Formatting.percent($0.fraction) } ?? "--%"
         Label {
             Text(percentText)
         } icon: {
@@ -299,6 +343,8 @@ private struct MenuBarContents: View {
             Task { await store.refresh(force: true) }
         }
 
+        providerMenu
+
         Divider()
 
         SettingsLink {
@@ -327,6 +373,20 @@ private struct MenuBarContents: View {
             } else {
                 Text("Linked")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var providerMenu: some View {
+        Menu("Provider") {
+            Picker("Provider", selection: Binding(
+                get: { store.provider },
+                set: { store.provider = $0 }
+            )) {
+                Text("Claude Code").tag(UsageStore.Provider.claude)
+                Text("Antigravity").tag(UsageStore.Provider.antigravity)
+            }
+            .pickerStyle(.inline)
         }
     }
 }
