@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.0 — weekly battery
+
+### Added
+- **Weekly battery** in the widget header: shows how much of your weekly limit is left, so an empty battery means the week is used up
+  - Five cells, 20% each, as milestones
+  - Same colors as the weekly rim: green, then yellow at 60%, orange at 80%, red at 95%
+  - The last cell blinks when low (slowly from 80%, fast from 95%); at 100% the battery is empty with a blinking red outline and `!`
+  - A lightning bolt appears right after the weekly limit resets
+  - Remaining percent shown next to it; hover for a tooltip with used / left
+- **Battery in mini mode**, in the top-right corner
+
+### Changed
+- The header battery used to mirror the 5h bar; it now tracks the weekly limit
+
 ## v0.1.0 — first public release
 
 UsagePet is a small macOS widget that shows your Claude Code plan limits (5-hour session and weekly) with a pixel pet whose mood follows your usage.

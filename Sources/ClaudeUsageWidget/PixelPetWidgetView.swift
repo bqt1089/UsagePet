@@ -64,7 +64,7 @@ struct PixelPetWidgetView: View {
     @ViewBuilder
     private func content(mood: PetMood, time: Double, reduceMotion: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8 * s) {
-            header
+            header(time: time)
 
             petArea(mood: mood, time: time, reduceMotion: reduceMotion)
                 .reportPetFrame()
@@ -93,11 +93,11 @@ struct PixelPetWidgetView: View {
         }
     }
 
-    private var header: some View {
+    private func header(time: Double) -> some View {
         HStack(spacing: 6 * s) {
             pixelText("USAGE", size: 13 * s, bold: true, color: LCD.ink)
             Spacer()
-            BatteryIcon(fraction: store.snapshot?.session?.fraction ?? 0)
+            BatteryIcon(weekly: store.snapshot?.weekly?.fraction, time: time, charging: store.currentMood == .love)
             Button(action: onMinimize) {
                 Image(systemName: "minus")
                     .font(.system(size: 9 * s, weight: .bold))

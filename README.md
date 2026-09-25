@@ -17,6 +17,7 @@ used up the pet simply goes on vacation until the reset.
 - **Pet mood follows your 5h usage**: ecstatic, happy, chill, focused, worried, stressed, panic, and asleep once you're limited
 - **Situational moods**: busy (Claude Code running), sleepy (late night), celebrate (5h reset), grateful (weekly reset), lonely (not linked), dizzy (offline), confused (API rate limit)
 - **Weekly warnings on the rim**: yellow at 60%, orange at 80%, red at 95%, with a light running around the edge
+- **Weekly battery** in the header (and in mini mode): cells drain as your weekly limit is used, blink when low, and show a bolt after the reset
 - **Vacation scene** when your weekly limit hits 100%
 - **Play with the pet**: hover to say hi, keep the pointer still for cuddles, jiggle to tickle, click to make it laugh, rub too much and it gets dizzy, swipe fast and it falls over
 - Floating widget on every Space and over full-screen apps; never steals focus

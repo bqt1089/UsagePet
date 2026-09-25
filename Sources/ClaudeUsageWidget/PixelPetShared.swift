@@ -117,28 +117,94 @@ private extension Double {
 /// Tiny pixel-style battery glyph showing the 5h session fraction, standing
 /// in for the mockup's hand-drawn battery icon in the header.
 @MainActor
+/// Weekly battery: how much of the weekly limit is left. Five cells (20% each)
+/// act as milestones; color and blinking follow the same thresholds as the
+/// weekly rim glow. Empty = weekly limit used up. A bolt shows right after a
+/// weekly reset ("recharged").
 struct BatteryIcon: View {
     @Environment(\.widgetScale) private var s
-    let fraction: Double
+    /// Weekly used fraction (0...1), nil when unknown.
+    let weekly: Double?
+    let time: Double
+    var charging: Bool = false
+    var showsLabel: Bool = true
+    var compact: Bool = false
+
+    private static let cells = 5
+
+    private var used: Double { (weekly ?? 0).clamped01() }
+    private var remaining: Double { 1 - used }
+    private var isEmpty: Bool { weekly != nil && used >= 1 }
+    private var litCells: Int {
+        guard weekly != nil, !isEmpty else { return 0 }
+        return max(1, Int((remaining * Double(Self.cells)).rounded(.up)))
+    }
+    private var color: Color {
+        guard weekly != nil else { return LCD.inkFaint }
+        switch used {
+        case ..<0.6: return UsageColor.green
+        case ..<0.8: return UsageColor.yellow
+        case ..<0.95: return UsageColor.orange
+        default: return UsageColor.red
+        }
+    }
+    /// Blink rate grows as the battery drains (ms per half-cycle); nil = steady.
+    private var blinkPeriod: Double? {
+        guard weekly != nil else { return nil }
+        if isEmpty { return 350 }
+        if used >= 0.95 { return 250 }
+        if used >= 0.8 { return 600 }
+        return nil
+    }
+    private var blinkOn: Bool {
+        guard let p = blinkPeriod else { return true }
+        return Int(time / p) % 2 == 0
+    }
 
     var body: some View {
-        HStack(spacing: 1 * s) {
-            RoundedRectangle(cornerRadius: 1.5 * s)
-                .strokeBorder(LCD.ink, lineWidth: 1.5 * s)
-                .frame(width: 20 * s, height: 10 * s)
-                .overlay(
-                    HStack {
-                        Rectangle()
-                            .fill(LCD.ink)
-                            .frame(width: max(1 * s, 16 * s * CGFloat(1 - fraction.clamped01())))
-                        Spacer(minLength: 0)
+        let k: CGFloat = compact ? 0.8 : 1
+        let w = 26 * s * k, h = 12 * s * k, pad = 2 * s * k, gap = 1 * s * k
+        HStack(spacing: 4 * s * k) {
+            HStack(spacing: 1 * s * k) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 2 * s * k)
+                        .strokeBorder(isEmpty ? (blinkOn ? UsageColor.red : UsageColor.red.opacity(0.3)) : LCD.ink, lineWidth: 1.5 * s * k)
+                    HStack(spacing: gap) {
+                        ForEach(0..<Self.cells, id: \.self) { i in
+                            let lit = i < litCells
+                            // The last lit cell blinks when low.
+                            let isEdge = lit && i == litCells - 1 && blinkPeriod != nil
+                            Rectangle()
+                                .fill(lit ? (isEdge && !blinkOn ? color.opacity(0.25) : color) : LCD.barOff)
+                        }
                     }
-                    .padding(2 * s)
-                )
-            Rectangle()
-                .fill(LCD.ink)
-                .frame(width: 2 * s, height: 4 * s)
+                    .padding(pad)
+                    if charging {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 9 * s * k, weight: .black))
+                            .foregroundStyle(LCD.ink)
+                            .shadow(color: .black.opacity(0.6), radius: 0, x: 0.5, y: 0.5)
+                    } else if isEmpty {
+                        pixelText("!", size: 9 * s * k, bold: true, color: blinkOn ? UsageColor.red : .clear)
+                    }
+                }
+                .frame(width: w, height: h)
+                Rectangle()
+                    .fill(isEmpty ? UsageColor.red : LCD.ink)
+                    .frame(width: 2 * s * k, height: 5 * s * k)
+            }
+            if showsLabel {
+                pixelText(weekly == nil ? "--" : "\(Int((remaining * 100).rounded()))%", size: 8 * s * k, bold: true, color: color)
+                    .monospacedDigit()
+            }
         }
+        .help(helpText)
+    }
+
+    private var helpText: String {
+        guard let weekly else { return "Weekly limit: unknown" }
+        if weekly >= 1 { return "Weekly limit used up" }
+        return "Weekly limit: \(Int((remaining * 100).rounded()))% left (\(Int((weekly * 100).rounded()))% used)"
     }
 }
 

@@ -69,6 +69,13 @@ struct PixelPetMiniView: View {
                 .padding(.horizontal, 10 * s)
                 .padding(.vertical, 8 * s)
             }
+            .overlay(alignment: .topTrailing) {
+                if isLinked {
+                    BatteryIcon(weekly: store.snapshot?.weekly?.fraction, time: t, charging: mood == .love, showsLabel: false, compact: true)
+                        .padding(.top, 5 * s)
+                        .padding(.trailing, 9 * s)
+                }
+            }
             .overlay(WeeklyBorderGlow(level: weeklyAlert, cornerRadius: 14 * s, time: t, reduceMotion: reduceMotion))
         }
         .frame(width: 200 * s, height: 56 * s)
