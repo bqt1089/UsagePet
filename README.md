@@ -14,10 +14,11 @@ used up the pet simply goes on vacation until the reset.
 ## Features
 
 - **Current (5h) and Weekly** usage with percent, pixel bars and reset countdowns
-- **15 pet moods** tied to your 5h usage: ecstatic, happy, chill, focused, worried, stressed, panic, sleeping when limited, plus busy (Claude Code running), sleepy (late night), celebrate (just reset) and more
+- **Pet mood follows your 5h usage**: ecstatic, happy, chill, focused, worried, stressed, panic, and asleep once you're limited
+- **Situational moods**: busy (Claude Code running), sleepy (late night), celebrate (5h reset), grateful (weekly reset), lonely (not linked), dizzy (offline), confused (API rate limit)
 - **Weekly warnings on the rim**: yellow at 60%, orange at 80%, red at 95%, with a light running around the edge
 - **Vacation scene** when your weekly limit hits 100%
-- **Hover the pet** for a random cute reaction (hearts, wave, tickle, backflip)
+- **Play with the pet**: hover to say hi, keep the pointer still for cuddles, jiggle to tickle, click to make it laugh, rub too much and it gets dizzy, swipe fast and it falls over
 - Floating widget on every Space and over full-screen apps; never steals focus
 - **Mini mode**, adjustable size (70–160%) and background opacity
 - Classic theme if you prefer plain bars
@@ -37,8 +38,8 @@ cd UsagePet
 ./scripts/build-app.sh --install
 ```
 
-This builds a release app, signs it ad-hoc, copies it to `~/Applications` and opens it.
-UsagePet runs from the menu bar (no Dock icon).
+This builds a release app, signs it ad-hoc, copies it to `~/Applications/ClaudeUsageWidget.app`
+(shown as **UsagePet**) and opens it. UsagePet runs from the menu bar (no Dock icon).
 
 First run:
 
@@ -47,6 +48,13 @@ First run:
 3. Numbers appear within a few seconds.
 
 Enable **Settings → General → Launch at Login** to start it automatically.
+
+## Using it
+
+- **Menu bar icon**: show/hide the widget, Mini Mode, Reset Widget Position, Refresh Now, Settings, Quit.
+- **Widget**: drag to move, `–` to minimize, double-click to switch between full and mini, right-click for more.
+- **Settings → Appearance**: theme (Pixel Pet or Classic), widget size (70–160%), background opacity.
+- **Settings → Account**: link with your Claude Code login, sign in to Claude Code, paste a token, or unlink.
 
 ## How it works
 
@@ -84,6 +92,8 @@ See [SECURITY.md](SECURITY.md) for details and how to report a vulnerability.
   Review them and use this at your own risk.
 - UsagePet does not refresh tokens. If Claude Code's token expires, open Claude Code once
   and the widget picks up the new one.
+- If you log out of Claude Code, the widget clears its numbers and asks you to sign in again.
+  It resumes on its own after you log back in.
 
 ## Development
 

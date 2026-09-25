@@ -1,6 +1,6 @@
 # UsagePet — Development notes
 
-A macOS menu-bar agent app showing Claude Code usage (session / weekly
+UsagePet is a macOS menu-bar agent app showing Claude Code usage (session / weekly
 limits). `ClaudeUsageCore` is the pure-Swift engine (parsing, token lookup,
 networking, poll scheduling, formatting); `ClaudeUsageWidget` is the SwiftUI
 + AppKit menu-bar UI on top of it, requiring macOS 14+.
@@ -29,7 +29,7 @@ The app runs as a background "accessory" app (no Dock icon). Click the
 gauge icon in the menu bar for the menu (Show/Hide Widget, Mini Mode,
 Refresh Now, Settings…, Quit). The floating usage card can be dragged
 anywhere, double-clicked or minimized (the small "–" button in its header)
-to switch to a compact mini pill, and right-clicked for a context menu.
+to switch to mini mode, and right-clicked for a context menu.
 
 ## Build a real app
 
@@ -98,7 +98,7 @@ account, in Settings → Account:
 - **Unlink** — stops polling, clears the app's own Keychain item, and clears
   the shown snapshot.
 
-Until you link an account, the widget shows a "Link Claude account" button
+Until you link an account, the widget shows a "Use Claude Code login" button
 and does not poll or touch the Keychain at all.
 
 ## Build & test
