@@ -120,14 +120,15 @@ struct PetRenderer {
         pixel: CGFloat,
         time: Double,
         seed: Int,
-        font: (CGFloat, Bool) -> Font
+        font: (CGFloat, Bool) -> Font,
+        styleOverride: MoodStyle? = nil
     ) -> PetGeometry? {
         if mood == .vacation {
             drawVacation(in: &context, centerX: origin.x, baseY: origin.y, pixel: pixel, time: time, font: font)
             return nil
         }
 
-        guard let style = MoodStyles.table[mood] else { return nil }
+        guard let style = styleOverride ?? MoodStyles.table[mood] else { return nil }
         let id = idle(t: time, seed: seed)
         let P = pixel
         let W = 12 * P
@@ -306,8 +307,8 @@ struct PetRenderer {
 
     /// Draws mood-specific effects anchored to a pet's geometry (hearts,
     /// notes, zzz, sweat, alert, etc). Call right after `draw`.
-    func drawFx(in context: inout GraphicsContext, mood: PetMood, geometry: PetGeometry, time: Double, font: (CGFloat, Bool) -> Font) {
-        guard let style = MoodStyles.table[mood] else { return }
+    func drawFx(in context: inout GraphicsContext, mood: PetMood, geometry: PetGeometry, time: Double, font: (CGFloat, Bool) -> Font, styleOverride: MoodStyle? = nil) {
+        guard let style = styleOverride ?? MoodStyles.table[mood] else { return }
         let cx = geometry.centerX, top = geometry.top, W = geometry.width, H = geometry.height, P = geometry.pixel
         func T(_ s: Double) -> Double { (time / s).truncatingRemainder(dividingBy: 1) }
         func pxl(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ color: Color, alpha: Double = 1) {

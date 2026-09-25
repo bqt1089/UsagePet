@@ -54,9 +54,11 @@ final class WidgetPanel: NSPanel {
         contentView = hosting
         // AppKit tracking area: works even though this accessory app is never
         // active and the panel never becomes key (SwiftUI .onHover doesn't).
+        hoverTracker.view = hosting
+        acceptsMouseMovedEvents = true
         hosting.addTrackingArea(NSTrackingArea(
             rect: .zero,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
             owner: hoverTracker,
             userInfo: nil
         ))

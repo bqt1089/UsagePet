@@ -28,7 +28,7 @@ struct PixelPetWidgetView: View {
         let mood = store.currentMood
         let weeklyAlert = store.weeklyAlert
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let highMotion = mood == .celebrate || mood == .panic
+        let highMotion = mood == .celebrate || mood == .panic || PetHoverModel.shared.isHovering
         let interval: Double = reduceMotion ? (1.0 / 6.0) : (highMotion ? (1.0 / 24.0) : (1.0 / 12.0))
 
         TimelineView(.animation(minimumInterval: interval, paused: false)) { timeline in
@@ -67,6 +67,7 @@ struct PixelPetWidgetView: View {
             header
 
             petArea(mood: mood, time: time, reduceMotion: reduceMotion)
+                .reportPetFrame()
                 .frame(height: 92 * s)
 
             if isLinked && !needsLoginWithoutData {
@@ -129,29 +130,30 @@ struct PixelPetWidgetView: View {
                     font: PixelFont.font
                 )
                 if let (r, e) = hover {
-                    PetHover.drawBubble(PetHover.bubbleText(base: mood, reaction: r), elapsed: e, anchor: CGPoint(x: size.width / 2 + 8, y: 30), pixel: 4, in: &context, font: PixelFont.font)
+                    PetHover.drawBubble(PetHover.bubbleText(base: mood, reaction: r, elapsed: e), elapsed: e, total: r.duration, anchor: CGPoint(x: size.width / 2 + 8, y: 30), pixel: 4, in: &context, font: PixelFont.font)
                 }
             } else {
                 let pixel: CGFloat = 5
                 let origin = CGPoint(x: size.width / 2 - 6 * pixel, y: 6)
-                let shown = hover.map { PetHover.shownMood(base: mood, reaction: $0.0) } ?? mood
+                let reactStyle = hover.flatMap { PetHover.style(base: mood, reaction: $0.0) }
                 var petCtx = context
                 if let (r, e) = hover {
                     PetHover.applyMotion(r, base: mood, elapsed: e, center: CGPoint(x: origin.x + 6 * pixel, y: origin.y + 5 * pixel), pixel: pixel, to: &petCtx, reduceMotion: reduceMotion)
                 }
                 if let geometry = renderer.draw(
                     in: &petCtx,
-                    mood: shown,
+                    mood: mood,
                     origin: origin,
                     pixel: pixel,
                     time: time,
                     seed: 1,
-                    font: PixelFont.font
+                    font: PixelFont.font,
+                    styleOverride: reactStyle
                 ) {
-                    renderer.drawFx(in: &petCtx, mood: shown, geometry: geometry, time: time, font: PixelFont.font)
+                    renderer.drawFx(in: &petCtx, mood: mood, geometry: geometry, time: time, font: PixelFont.font, styleOverride: reactStyle)
                 }
                 if let (r, e) = hover {
-                    PetHover.drawBubble(PetHover.bubbleText(base: mood, reaction: r), elapsed: e, anchor: CGPoint(x: origin.x + 10 * pixel, y: origin.y + 1 * pixel), pixel: pixel, in: &context, font: PixelFont.font)
+                    PetHover.drawBubble(PetHover.bubbleText(base: mood, reaction: r, elapsed: e), elapsed: e, total: r.duration, anchor: CGPoint(x: origin.x + 10 * pixel, y: origin.y + 1 * pixel), pixel: pixel, in: &context, font: PixelFont.font)
                 }
             }
         }

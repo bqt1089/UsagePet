@@ -23,7 +23,7 @@ struct PixelPetMiniView: View {
         let mood = store.currentMood
         let weeklyAlert = store.weeklyAlert
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let highMotion = mood == .celebrate || mood == .panic
+        let highMotion = mood == .celebrate || mood == .panic || PetHoverModel.shared.isHovering
         let interval: Double = reduceMotion ? (1.0 / 6.0) : (highMotion ? (1.0 / 24.0) : (1.0 / 12.0))
 
         TimelineView(.animation(minimumInterval: interval, paused: false)) { timeline in
@@ -40,6 +40,7 @@ struct PixelPetMiniView: View {
 
                 HStack(spacing: 8 * s) {
                     petThumbnail(mood: mood, time: t, reduceMotion: reduceMotion)
+                .reportPetFrame()
                         .frame(width: 40 * s, height: 40 * s)
 
                     if isLinked {
@@ -96,21 +97,22 @@ struct PixelPetMiniView: View {
             } else {
                 let pixel: CGFloat = 2.5
                 let origin = CGPoint(x: size.width / 2 - 6 * pixel, y: 2)
-                let shown = hover.map { PetHover.shownMood(base: mood, reaction: $0.0) } ?? mood
+                let reactStyle = hover.flatMap { PetHover.style(base: mood, reaction: $0.0) }
                 var petCtx = context
                 if let (r, e) = hover {
                     PetHover.applyMotion(r, base: mood, elapsed: e, center: CGPoint(x: origin.x + 6 * pixel, y: origin.y + 5 * pixel), pixel: pixel, to: &petCtx, reduceMotion: reduceMotion)
                 }
                 if let geometry = renderer.draw(
                     in: &petCtx,
-                    mood: shown,
+                    mood: mood,
                     origin: origin,
                     pixel: pixel,
                     time: time,
                     seed: 1,
-                    font: PixelFont.font
+                    font: PixelFont.font,
+                    styleOverride: reactStyle
                 ) {
-                    renderer.drawFx(in: &petCtx, mood: shown, geometry: geometry, time: time, font: PixelFont.font)
+                    renderer.drawFx(in: &petCtx, mood: mood, geometry: geometry, time: time, font: PixelFont.font, styleOverride: reactStyle)
                 }
             }
         }
