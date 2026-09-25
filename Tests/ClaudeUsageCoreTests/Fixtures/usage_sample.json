@@ -1,0 +1,54 @@
+{
+  "five_hour": {
+    "utilization": 42.0,
+    "resets_at": "2026-09-24T03:00:00.271287+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day": {
+    "utilization": 57.0,
+    "resets_at": "2026-09-29T21:00:00.271311+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day_oauth_apps": null,
+  "seven_day_opus": null,
+  "seven_day_sonnet": null,
+  "extra_usage": {
+    "is_enabled": false,
+    "user_disabled": true
+  },
+  "limits": [
+    {
+      "kind": "session",
+      "group": "session",
+      "percent": 42,
+      "severity": "normal",
+      "resets_at": "2026-09-24T03:00:00.271287+00:00",
+      "scope": null,
+      "is_active": false
+    },
+    {
+      "kind": "weekly_all",
+      "group": "weekly",
+      "percent": 57,
+      "severity": "normal",
+      "resets_at": "2026-09-29T21:00:00.271311+00:00",
+      "scope": null,
+      "is_active": true
+    }
+  ],
+  "spend": {
+    "percent": 0,
+    "severity": "normal",
+    "enabled": false
+  },
+  "unknown_future_field": {
+    "utilization": 0.0,
+    "resets_at": null
+  }
+}

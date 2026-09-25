@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Network host allowlist
+        run: ./scripts/check-network-hosts.sh
+      - name: Secret scan
+        run: |
+          if git grep -nE 'sk-ant-[A-Za-z0-9_-]{10,}|Bearer [A-Za-z0-9._-]{20,}|"accessToken"\s*:\s*"[^"]+' -- . ':!*.md'; then
+            echo "Possible secret committed"; exit 1
+          fi
+      - name: Build & test
+        run: swift test

@@ -1,0 +1,15 @@
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+build/
+DerivedData/
+*.xcodeproj/
+xcuserdata/
+Package.resolved
+
+# macOS
+.DS_Store
+
+# Local scratch
+_to_delete/
+*.log
