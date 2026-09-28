@@ -11,6 +11,12 @@ used up the pet simply goes on vacation until the reset.
 > Unofficial side project. Not affiliated with, endorsed by, or supported by Anthropic.
 > "Claude" and "Claude Code" are trademarks of Anthropic.
 
+```sh
+brew install --cask bqt1089/tap/usagepet
+```
+
+or download the app from [Releases](https://github.com/bqt1089/UsagePet/releases/latest).
+
 ## Features
 
 - **Current (5h) and Weekly** usage with percent, pixel bars and reset countdowns
@@ -27,8 +33,8 @@ used up the pet simply goes on vacation until the reset.
 
 ## Requirements
 
-- macOS 14 Sonoma or later
-- Xcode 15+ command line tools (to build)
+- macOS 14 Sonoma or later (Apple Silicon or Intel)
+- No Xcode needed for Homebrew or the download; building from source needs Swift 5.9+ (`xcode-select --install`)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and logged in on a Pro or Max plan
 
 ## Install
@@ -39,12 +45,15 @@ used up the pet simply goes on vacation until the reset.
 brew install --cask bqt1089/tap/usagepet
 ```
 
+Upgrade with `brew upgrade --cask usagepet`, remove with `brew uninstall --cask usagepet`.
+
 **Or download**: grab `UsagePet-<version>.zip` from [Releases](https://github.com/bqt1089/UsagePet/releases), unzip, and move `UsagePet.app` to Applications.
 
 No Xcode needed either way. UsagePet runs from the menu bar (no Dock icon).
 
 **First launch:** UsagePet isn't notarized yet, so macOS blocks it the first time. Open it once, then go to
 **System Settings → Privacy & Security** and click **Open Anyway**. Only needed once per version.
+Prefer Terminal? `xattr -dr com.apple.quarantine /Applications/UsagePet.app`
 
 **Build from source** (needs Swift 5.9+, Xcode or Command Line Tools):
 
