@@ -52,7 +52,7 @@ final class UsageStore {
     /// "follow the real mood engine" (the normal path).
     var debugPinnedMood: PetMood?
 
-    private var client: UsageClient
+    private var client: any UsageFetching
     private var scheduler = PollScheduler()
     private var pollTask: Task<Void, Never>?
     private var claudeActiveTask: Task<Void, Never>?
@@ -66,13 +66,15 @@ final class UsageStore {
         self.client = Self.makeClient(for: accountManager)
     }
 
-    private static func makeClient(for accountManager: AccountManager) -> UsageClient {
-        guard let provider = accountManager.makeTokenProvider() else {
-            // No mode selected yet; this client is never actually polled
-            // against (see `restartPolling`), but give it something inert.
+    private static func makeClient(for accountManager: AccountManager) -> any UsageFetching {
+        guard let fetcher = accountManager.makeUsageFetcher() else {
+            // No mode selected yet (or a linked mode with nothing usable,
+            // e.g. a missing claude.ai Keychain item); this client is never
+            // actually polled against (see `restartPolling`), but give it
+            // something inert.
             return UsageClient(tokenProvider: StaticTokenProvider { nil })
         }
-        return UsageClient(tokenProvider: provider)
+        return fetcher
     }
 
     // MARK: - Pixel Pet mood inputs
@@ -195,6 +197,33 @@ final class UsageStore {
         return await fetchOnce(force: force)
     }
 
+    /// True while a user-triggered refresh is in flight (drives "Refreshing…").
+    private(set) var isRefreshing = false
+    /// When the last user-triggered refresh finished (drives "Updated just now").
+    private(set) var lastManualRefreshAt: Date?
+    private(set) var lastManualRefreshSucceeded = false
+
+    /// "Refresh Now": fresh client + connection pool, reset backoff, fetch
+    /// immediately, then resume the normal 60 s loop from this point. A plain
+    /// fetch wasn't enough: while the loop was in a long backoff (or the old
+    /// connection pool was dead) nothing visibly changed.
+    func refreshNow() async {
+        guard accountManager.mode != .notLinked, !isRefreshing else { return }
+        isRefreshing = true
+        pollTask?.cancel()
+        pollTask = nil
+        scheduler = PollScheduler()
+        client = Self.makeClient(for: accountManager)
+        let ok = await fetchOnce(force: true)
+        isRefreshing = false
+        lastManualRefreshAt = Date()
+        lastManualRefreshSucceeded = ok
+        let firstDelay = ok ? scheduler.nextDelayAfterSuccess() : scheduler.nextDelayAfterFailure()
+        pollTask = Task { [weak self] in
+            await self?.pollLoop(initialDelay: firstDelay)
+        }
+    }
+
     /// Rebuilds the `UsageClient` for the current account mode and restarts
     /// (or stops) the poll loop. Called on launch and whenever the account
     /// mode changes.
@@ -217,7 +246,10 @@ final class UsageStore {
         }
     }
 
-    private func pollLoop() async {
+    private func pollLoop(initialDelay: TimeInterval = 0) async {
+        if initialDelay > 0 {
+            do { try await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000)) } catch { return }
+        }
         while !Task.isCancelled {
             let succeeded = await fetchOnce(force: false)
             let delay: TimeInterval
@@ -399,9 +431,14 @@ final class UsageStore {
         case .notLinked:
             return "Link your Claude account to see usage."
         case .claudeCode:
+            if AccountManager.claudeCodeCredentialsLackSubscription() {
+                return "Claude Code is signed in without a subscription (API key?). Run Sign in to Claude Code… and choose \"Claude account with subscription\"."
+            }
             return "Not signed in to Claude Code. Run `claude` and /login, then tap Use Claude Code login."
         case .manualToken:
             return "Saved token is invalid or expired. Paste a new one in Settings."
+        case .claudeWeb:
+            return "claude.ai session expired. Click Sign in with claude.ai again."
         }
     }
 

@@ -58,7 +58,7 @@ public actor UsageClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("UsagePet/0.3.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("UsagePet/0.4.0", forHTTPHeaderField: "User-Agent")
 
         let data: Data
         let response: URLResponse

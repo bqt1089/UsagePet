@@ -87,7 +87,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 480)
+        .frame(minWidth: 480, maxWidth: 480, minHeight: 560)
         .onAppear { NSApp.activate(ignoringOtherApps: true) }
     }
 }
@@ -122,30 +122,27 @@ private struct MoodPinPicker: View {
 }
 
 /// "Account" section of Settings: link status, linking actions, and the
-/// advanced manual-token flow. Never touches Keychain or the network until
-/// the user taps one of these buttons.
+/// advanced manual-token flow. Each action is a full-width button with a
+/// short caption underneath explaining what it does. Never touches
+/// Keychain or the network until the user taps one of these buttons.
 @MainActor
 private struct AccountSection: View {
     @Environment(UsageStore.self) private var store
     @State private var showAdvanced = false
     @State private var tokenInput = ""
     @State private var caption: String?
+    private var loginFlow = ClaudeCodeLoginFlow.shared
 
     private var accountManager: AccountManager { store.accountManager }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             statusLine
 
-            HStack(spacing: 10) {
-                Button("Use Claude Code login") {
-                    accountManager.useClaudeCodeLogin()
-                    caption = "If macOS asks for Keychain access, allow it to read the Claude Code login."
-                }
-                Button("Sign in to Claude Code…") { openTerminalLogin() }
-                Button("Unlink") { accountManager.unlink() }
-                    .disabled(accountManager.mode == .notLinked)
-            }
+            useClaudeCodeLoginRow
+            signInToClaudeCodeRow
+            signInWithClaudeWebRow
+            unlinkRow
 
             DisclosureGroup("Advanced: paste token", isExpanded: $showAdvanced) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -179,6 +176,120 @@ private struct AccountSection: View {
         }
     }
 
+    // MARK: - Rows
+
+    private var useClaudeCodeLoginRow: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Button("Use Claude Code login") {
+                    accountManager.useClaudeCodeLogin()
+                    caption = "If macOS asks for Keychain access, allow it to read the Claude Code login."
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if AccountManager.claudeCodeCredentialSeemsPresent() {
+                    Text("Recommended")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.accentColor))
+                }
+            }
+            Text(useClaudeCodeLoginCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .help(useClaudeCodeLoginCaption)
+    }
+
+    private let useClaudeCodeLoginCaption =
+        "Already signed in to Claude Code on this Mac? Reuse that sign-in. If macOS asks for Keychain access, choose Always Allow."
+
+    private var signInToClaudeCodeRow: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Button("Sign in to Claude Code…") {
+                loginFlow.start()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .disabled(isWaitingForClaudeCodeLogin)
+
+            signInToClaudeCodeCaption
+        }
+        .help(signInToClaudeCodeHelpText)
+    }
+
+    @ViewBuilder
+    private var signInToClaudeCodeCaption: some View {
+        switch loginFlow.state {
+        case .waiting:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Waiting for sign-in in Terminal…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Cancel") { loginFlow.cancel() }
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
+        case .succeeded:
+            Text("✓ Linked")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .failed(let message):
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        case .idle:
+            Text(signInToClaudeCodeHelpText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private let signInToClaudeCodeHelpText =
+        "Opens Terminal and runs claude /login. Approve in your browser (no need to sign in again if you already are). UsagePet links and closes Terminal automatically."
+
+    private var isWaitingForClaudeCodeLogin: Bool {
+        if case .waiting = loginFlow.state { return true }
+        return false
+    }
+
+    private var signInWithClaudeWebRow: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Button("Sign in with claude.ai…") {
+                ClaudeWebLoginWindow.present(accountManager: accountManager)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(signInWithClaudeWebCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .help(signInWithClaudeWebCaption)
+    }
+
+    private let signInWithClaudeWebCaption =
+        "No Claude Code? Sign in to claude.ai in a UsagePet window. The web session lasts about 30 days, then you sign in again."
+
+    private var unlinkRow: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Button("Unlink", role: .destructive) { accountManager.unlink() }
+                .disabled(accountManager.mode == .notLinked)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(unlinkCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .help(unlinkCaption)
+    }
+
+    private let unlinkCaption =
+        "Stops tracking and deletes sign-in data UsagePet stored. Does not sign you out of Claude Code or claude.ai."
+
     @ViewBuilder
     private var statusLine: some View {
         switch accountManager.mode {
@@ -186,26 +297,18 @@ private struct AccountSection: View {
             Text("Not linked").font(.headline)
         case .claudeCode, .manualToken:
             if let info = accountManager.accountInfo, let email = info.email {
-                let plan = info.subscriptionType.map { " · \($0)" } ?? ""
-                Text("Linked: \(email)\(plan)").font(.headline)
+                Text("Linked: \(email) · Claude Code").font(.headline)
             } else {
-                Text("Linked").font(.headline)
+                Text("Linked: Claude Code").font(.headline)
             }
-        }
-    }
-
-    private func openTerminalLogin() {
-        let source = "tell application \"Terminal\" to do script \"claude /login\""
-        if let script = NSAppleScript(source: source) {
-            var errorDict: NSDictionary?
-            script.executeAndReturnError(&errorDict)
-            if errorDict != nil {
-                caption = "Run `claude` then `/login` in Terminal."
+        case .claudeWeb:
+            if let label = accountManager.accountInfo?.email
+                ?? accountManager.accountInfo?.organizationName
+                ?? accountManager.accountInfo?.displayName {
+                Text("Linked: \(label) · claude.ai").font(.headline)
             } else {
-                caption = "Opened Terminal. After you finish logging in there, click \"Use Claude Code login\" above."
+                Text("Linked: claude.ai").font(.headline)
             }
-        } else {
-            caption = "Run `claude` then `/login` in Terminal."
         }
     }
 }
@@ -296,7 +399,7 @@ private struct MenuBarContents: View {
         }
 
         Button("Refresh Now") {
-            Task { await store.refresh(force: true) }
+            Task { await store.refreshNow() }
         }
 
         Divider()
@@ -321,7 +424,7 @@ private struct MenuBarContents: View {
             SettingsLink {
                 Text("Not linked — Open Settings")
             }
-        case .claudeCode, .manualToken:
+        case .claudeCode, .manualToken, .claudeWeb:
             if let email = store.accountManager.accountInfo?.email {
                 Text("Linked: \(email)")
             } else {
@@ -389,6 +492,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
             }
         }
+
+        ClaudeCodeLoginFlow.shared.attach(accountManager: accountManager)
 
         store.start()
     }

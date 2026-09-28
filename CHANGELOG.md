@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.4.0 — more ways to link your account
+
+### Added
+- **Sign in to Claude Code… is back**: runs `claude /login` in Terminal, links automatically and
+  closes the window when done
+- **Sign in with claude.ai**: a new way to link an account for machines without Claude Code
+  installed, or when the Keychain route to Claude Code's own login fails. Sign-in happens in an
+  in-app, isolated web view; UsagePet reads only the `sessionKey` cookie from that view's own
+  cookie store (never your browser's cookies) and uses it the way claude.ai's own web app does
+
+### Changed
+- Clearer Account settings with a description under each button
+
+### Fixed
+- **Refresh Now** now really refreshes: it reconnects, fetches right away and shows "Refreshing… / Updated just now / Refresh failed" in the widget footer
+
+### Upgrading
+- The app is ad-hoc signed, so macOS treats each version as a new app: expect "Open Anyway" once, and the Keychain prompt for Claude Code's login once more (choose Always Allow)
+- The first time you use Sign in to Claude Code…, macOS asks to let UsagePet control Terminal — allow it so the window can close by itself
+
 ## v0.3.0 — easier install, steadier connection
 
 ### Added

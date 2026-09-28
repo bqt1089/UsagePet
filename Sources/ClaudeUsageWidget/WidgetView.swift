@@ -62,7 +62,7 @@ struct WidgetRootView: View {
                 miniMode.toggle()
             }
             Button("Refresh") {
-                Task { await store.refresh(force: true) }
+                Task { await store.refreshNow() }
             }
             Divider()
             Button("Hide") {
@@ -95,18 +95,6 @@ enum WidgetScale {
     static let max = 1.6
     static let `default` = 1.0
     static func clamp(_ v: Double) -> Double { Swift.min(Swift.max(v, min), max) }
-}
-
-/// Opens Terminal running `claude /login`. Returns false if AppleScript failed.
-@MainActor
-enum ClaudeCodeLogin {
-    @discardableResult
-    static func openTerminal() -> Bool {
-        guard let script = NSAppleScript(source: "tell application \"Terminal\"\n activate\n do script \"claude /login\"\nend tell") else { return false }
-        var errorDict: NSDictionary?
-        script.executeAndReturnError(&errorDict)
-        return errorDict == nil
-    }
 }
 
 /// Fraction/severity -> bar color. Bumps up to at least orange/red when the
@@ -231,11 +219,25 @@ struct WidgetView: View {
         }
     }
 
+    private var isWaitingForClaudeCodeLogin: Bool {
+        if case .waiting = ClaudeCodeLoginFlow.shared.state { return true }
+        return false
+    }
+
+    private var linkSectionCaption: String {
+        if isWaitingForClaudeCodeLogin {
+            return "Waiting for Terminal sign-in…"
+        }
+        return isLinked
+            ? "No valid Claude Code login found. Sign in, then tap Use Claude Code login."
+            : "Reads your Claude Code login (read-only), or sign in with claude.ai instead."
+    }
+
     private var linkAccountSection: some View {
         VStack(alignment: .leading, spacing: 8 * s) {
             Button {
                 store.accountManager.useClaudeCodeLogin()
-                Task { await store.refresh(force: true) }
+                Task { await store.refreshNow() }
             } label: {
                 Label("Use Claude Code login", systemImage: "person.crop.circle.badge.checkmark")
                     .font(.system(size: 12 * s, weight: .semibold))
@@ -246,17 +248,28 @@ struct WidgetView: View {
             }
             .buttonStyle(.plain)
 
+            Button {
+                ClaudeCodeLoginFlow.shared.start()
+            } label: {
+                Label("Sign in to Claude Code…", systemImage: "terminal")
+                    .font(.system(size: 12 * s, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8 * s)
+                    .background(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(isWaitingForClaudeCodeLogin)
+
             HStack(spacing: 10 * s) {
-                Button("Sign in to Claude Code…") { ClaudeCodeLogin.openTerminal() }
+                Button("Sign in with claude.ai…") { ClaudeWebLoginWindow.present(accountManager: store.accountManager) }
                 Button("More options") { requestShowSettings() }
             }
             .buttonStyle(.plain)
             .font(.system(size: 10 * s, weight: .medium))
             .foregroundStyle(.white.opacity(0.75))
 
-            Text(isLinked
-                 ? "No valid Claude Code login found. Sign in, then tap Use Claude Code login."
-                 : "Reads your Claude Code login (read-only). macOS will ask for Keychain access.")
+            Text(linkSectionCaption)
                 .font(.system(size: 10 * s))
                 .foregroundStyle(.white.opacity(0.55))
                 .fixedSize(horizontal: false, vertical: true)

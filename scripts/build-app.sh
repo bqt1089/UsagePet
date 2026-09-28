@@ -6,7 +6,7 @@
 #   ./scripts/build-app.sh --install  # also copy to ~/Applications and open it
 #   ./scripts/build-app.sh --zip      # also package build/UsagePet-<version>.zip (+ .sha256)
 #
-# Env: VERSION=0.3.0 overrides the version (CI sets it from the git tag).
+# Env: VERSION=0.4.0 overrides the version (CI sets it from the git tag).
 #      REQUIRE_UNIVERSAL=1 fails instead of falling back to a native-arch build.
 set -euo pipefail
 
@@ -17,7 +17,7 @@ APP_NAME="ClaudeUsageWidget"      # SwiftPM executable name (CFBundleExecutable)
 BUNDLE_NAME="UsagePet"           # .app folder name users see
 BUNDLE_ID="io.github.bqt1089.UsagePet"
 DISPLAY_NAME="UsagePet"
-SHORT_VERSION="${VERSION:-0.3.0}"
+SHORT_VERSION="${VERSION:-0.4.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(echo "$SHORT_VERSION" | awk -F. '{ printf "%d", $1*10000 + $2*100 + $3 }')}"
 
 BUILD_DIR="$ROOT_DIR/build"
@@ -160,12 +160,12 @@ log "Writing Info.plist"
     <string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>Opens Terminal to run "claude /login" so you can sign in to Claude Code.</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>UsagePet opens Terminal to run claude /login and closes that window when sign-in finishes.</string>
 PLIST
   if [ "$ICON_ADDED" = true ]; then
     cat <<'PLIST'

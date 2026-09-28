@@ -35,7 +35,8 @@ or download the app from [Releases](https://github.com/bqt1089/UsagePet/releases
 
 - macOS 14 Sonoma or later (Apple Silicon or Intel)
 - No Xcode needed for Homebrew or the download; building from source needs Swift 5.9+ (`xcode-select --install`)
-- [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and logged in on a Pro or Max plan
+- Either [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and logged in on a Pro or
+  Max plan, or just a claude.ai account (Sign in with claude.ai, no Claude Code install needed)
 
 ## Install
 
@@ -63,11 +64,18 @@ cd UsagePet
 ./scripts/build-app.sh --install
 ```
 
-First run:
+First run: three ways to link an account.
 
-1. Click **Use Claude Code login** on the widget.
-2. macOS asks to let UsagePet read the `Claude Code-credentials` Keychain item. Choose **Always Allow**.
-3. Numbers appear within a few seconds.
+- **Use Claude Code login**: already signed in to Claude Code on this Mac? Reuse that sign-in. If
+  macOS asks for Keychain access, choose **Always Allow**. Numbers appear within a few seconds.
+- **Sign in to Claude Code…** (recommended if you're not already signed in): opens Terminal and runs
+  `claude /login`. Approve in your browser (no need to sign in again if you already are). UsagePet
+  links and closes Terminal automatically — you never have to switch back to it.
+- **Sign in with claude.ai…**: no Claude Code? Sign in to claude.ai in a UsagePet window. The web
+  session lasts about 30 days, then you sign in again. UsagePet only reads the `sessionKey` cookie
+  from that window's own, isolated session — it never touches your browser's cookies. Google sign-in
+  can be blocked inside this window; if so, use **Continue with email** instead, which sends you a
+  sign-in code.
 
 Enable **Settings → General → Launch at Login** to start it automatically.
 
@@ -76,12 +84,14 @@ Enable **Settings → General → Launch at Login** to start it automatically.
 - **Menu bar icon**: show/hide the widget, Mini Mode, Reset Widget Position, Refresh Now, Settings, Quit.
 - **Widget**: drag to move, `–` to minimize, double-click to switch between full and mini, right-click for more.
 - **Settings → Appearance**: theme (Pixel Pet or Classic), widget size (70–160%), background opacity.
-- **Settings → Account**: link with your Claude Code login, sign in to Claude Code, paste a token, or unlink.
+- **Settings → Account**: link with your Claude Code login, run Sign in to Claude Code…, sign in
+  with claude.ai, paste a token, or unlink.
 
 ## How it works
 
-UsagePet reuses the login you already have in Claude Code. It never asks for your password
-and has no login screen of its own.
+UsagePet supports two ways to read your usage, and never asks for your password.
+
+**Claude Code login**: reuses the login you already have in Claude Code.
 
 1. After you click **Use Claude Code login**, it reads the OAuth access token that Claude Code
    stores in your macOS Keychain.
@@ -89,10 +99,28 @@ and has no login screen of its own.
    Claude Code's `/usage` command uses.
 3. It shows the returned percentages and reset times. Countdowns tick locally.
 
+**Sign in to Claude Code…**: runs `claude /login` for you, then links automatically.
+
+1. Clicking **Sign in to Claude Code…** opens Terminal and runs `claude /login` there, so it works
+   even if you weren't signed in yet.
+2. UsagePet watches Claude Code's own credentials (never the token itself, only a fingerprint of it)
+   until they change, then links this app the same way **Use Claude Code login** does.
+3. It closes the Terminal window for you — you never have to switch back to it.
+
+**Sign in with claude.ai**: for machines without Claude Code, or when the Keychain route fails.
+
+1. Clicking **Sign in with claude.ai…** opens claude.ai's own login page inside an in-app, isolated
+   web view — a private, non-persistent session with no access to your Safari/Chrome cookies.
+2. Once you're signed in, UsagePet reads the `sessionKey` cookie from that web view's own cookie
+   store only, then closes the window.
+3. It uses that cookie the same way claude.ai's own web app does: one request to find your
+   organization, then about once a minute a read-only usage request, both to `claude.ai`.
+
 ## Privacy
 
-- The token is only used for that request's `Authorization` header. It is never logged,
-  written to disk, or sent anywhere other than `api.anthropic.com`.
+- The Claude Code token is only used for that request's `Authorization` header, and the claude.ai
+  `sessionKey` only as a `Cookie` header. Neither is ever logged, written to disk unencrypted, or
+  sent anywhere other than `api.anthropic.com` / `claude.ai`.
 - No analytics, telemetry, or update checks. No other network traffic (enforced in CI).
 - The "Claude Code running" mood only checks file modification times under
   `~/.claude/projects`; it never reads their contents.
