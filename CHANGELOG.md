@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.0 — easier install, steadier connection
+
+### Added
+- Prebuilt universal app (Apple Silicon + Intel) attached to each GitHub Release — no Xcode needed
+- Homebrew: `brew install --cask bqt1089/tap/usagepet`
+
+### Fixed
+- The widget could stop updating after running for days: reading the Keychain could hang forever when macOS was waiting on an access prompt (often after Claude Code refreshed its login). It now times out, shows "waiting for Keychain access", and keeps the last numbers
+- Fresh network connection after the Mac wakes, shorter request timeouts, and an automatic restart if nothing succeeds for 8 minutes
+
+### Changed
+- The app is now installed as `UsagePet.app` (was `ClaudeUsageWidget.app`)
+
 ## v0.2.0 — weekly battery
 
 ### Added

@@ -20,7 +20,19 @@ public actor UsageClient {
     private var lastFetchDate: Date?
     private var lastSnapshot: UsageSnapshot?
 
-    public init(tokenProvider: TokenProvider, session: URLSession = .shared, minimumInterval: TimeInterval = 15) {
+    /// A fresh, short-timeout session. `URLSession.shared` can hold on to a
+    /// dead HTTP/2 connection for a long time after sleep/network changes;
+    /// each client (recreated on wake / watchdog) gets its own pool instead.
+    public static func makeSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 30
+        config.waitsForConnectivity = false
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: config)
+    }
+
+    public init(tokenProvider: TokenProvider, session: URLSession = UsageClient.makeSession(), minimumInterval: TimeInterval = 15) {
         self.tokenProvider = tokenProvider
         self.session = session
         self.minimumInterval = minimumInterval
@@ -46,7 +58,7 @@ public actor UsageClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("UsagePet/0.2.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("UsagePet/0.3.0", forHTTPHeaderField: "User-Agent")
 
         let data: Data
         let response: URLResponse

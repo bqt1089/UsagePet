@@ -122,7 +122,10 @@ final class UsageStore {
 
         tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task { @MainActor in self.now = Date() }
+            Task { @MainActor in
+                self.now = Date()
+                self.watchdog()
+            }
         }
         if let tickTimer {
             RunLoop.main.add(tickTimer, forMode: .common)
@@ -136,7 +139,8 @@ final class UsageStore {
             guard let self else { return }
             Task { @MainActor in
                 guard self.accountManager.mode != .notLinked else { return }
-                await self.refresh(force: true)
+                // Fresh client + URLSession: connections from before sleep are often dead.
+                self.restartPolling()
             }
         }
 
@@ -149,6 +153,19 @@ final class UsageStore {
         }
 
         startClaudeActiveMonitor()
+        restartPolling()
+    }
+
+    /// Self-heal: if nothing has succeeded for a long time while linked,
+    /// rebuild the client and restart the loop (covers stuck requests, a
+    /// dead connection pool, or a loop that stopped for any reason).
+    private var lastWatchdogRestart = Date.distantPast
+    private func watchdog() {
+        guard accountManager.mode != .notLinked else { return }
+        let reference = lastUpdated ?? lastWatchdogRestart
+        guard now.timeIntervalSince(reference) > 8 * 60,
+              now.timeIntervalSince(lastWatchdogRestart) > 8 * 60 else { return }
+        lastWatchdogRestart = now
         restartPolling()
     }
 
@@ -244,6 +261,11 @@ final class UsageStore {
         } catch UsageClientError.rateLimited(let retryAfter) {
             let until = retryAfter.map { Date().addingTimeInterval($0) }
             status = .rateLimited(until: until)
+            lastErrorWasNetwork = false
+            markStaleIfNeeded()
+            return false
+        } catch UsageClientError.network(let underlying) where (underlying as? TokenProviderError) == .keychainTimedOut {
+            status = .needsLogin(message: "macOS is waiting for Keychain access. Click Use Claude Code login, then choose Always Allow.")
             lastErrorWasNetwork = false
             markStaleIfNeeded()
             return false

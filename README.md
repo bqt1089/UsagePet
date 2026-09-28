@@ -33,14 +33,26 @@ used up the pet simply goes on vacation until the reset.
 
 ## Install
 
+**Homebrew** (recommended):
+
+```sh
+brew install --cask bqt1089/tap/usagepet
+```
+
+**Or download**: grab `UsagePet-<version>.zip` from [Releases](https://github.com/bqt1089/UsagePet/releases), unzip, and move `UsagePet.app` to Applications.
+
+No Xcode needed either way. UsagePet runs from the menu bar (no Dock icon).
+
+**First launch:** UsagePet isn't notarized yet, so macOS blocks it the first time. Open it once, then go to
+**System Settings → Privacy & Security** and click **Open Anyway**. Only needed once per version.
+
+**Build from source** (needs Swift 5.9+, Xcode or Command Line Tools):
+
 ```sh
 git clone https://github.com/bqt1089/UsagePet.git
 cd UsagePet
 ./scripts/build-app.sh --install
 ```
-
-This builds a release app, signs it ad-hoc, copies it to `~/Applications/ClaudeUsageWidget.app`
-(shown as **UsagePet**) and opens it. UsagePet runs from the menu bar (no Dock icon).
 
 First run:
 

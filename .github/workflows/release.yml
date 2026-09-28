@@ -1,0 +1,104 @@
+name: Release
+
+# Push a tag like v0.3.0 → builds a universal UsagePet.app, zips it and
+# attaches it (plus a SHA-256 checksum) to the GitHub Release for that tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build, e.g. v0.3.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Network host allowlist
+        run: ./scripts/check-network-hosts.sh
+
+      - name: Test
+        run: swift test
+
+      - name: Icon tooling
+        run: python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet pillow || true
+
+      - name: Build universal app
+        run: |
+          VERSION="${TAG#v}" REQUIRE_UNIVERSAL=1 ./scripts/build-app.sh --zip
+          lipo -archs build/UsagePet.app/Contents/MacOS/ClaudeUsageWidget
+
+      - name: Release notes from CHANGELOG
+        run: |
+          awk -v v="## ${TAG}" '
+            index($0, v) == 1 { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "UsagePet ${TAG}" > notes.md; fi
+          cat >> notes.md <<'MD'
+
+          ---
+          **Install:** download `UsagePet-*.zip`, unzip, move `UsagePet.app` to Applications.
+          First launch: macOS will block it because the app isn't notarized — open
+          **System Settings → Privacy & Security → Open Anyway**, or run
+          `xattr -dr com.apple.quarantine /Applications/UsagePet.app`.
+          MD
+
+      - name: Publish
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "UsagePet $TAG" --notes-file notes.md
+          fi
+          gh release upload "$TAG" build/UsagePet-*.zip build/UsagePet-*.zip.sha256 --clobber
+
+  update-tap:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Skip when TAP_TOKEN is not set
+        if: env.TAP_TOKEN == ''
+        run: echo "TAP_TOKEN secret not set; update Casks/usagepet.rb in bqt1089/homebrew-tap by hand."
+
+      - name: Read checksum from the release
+        if: env.TAP_TOKEN != ''
+        run: |
+          VERSION="${TAG#v}"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "UsagePet-${VERSION}.zip.sha256"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "SHA256=$(cut -d' ' -f1 UsagePet-${VERSION}.zip.sha256)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        if: env.TAP_TOKEN != ''
+        with:
+          repository: bqt1089/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+
+      - name: Bump cask
+        if: env.TAP_TOKEN != ''
+        working-directory: tap
+        run: |
+          sed -i -E "s/^  version \".*\"/  version \"${VERSION}\"/" Casks/usagepet.rb
+          sed -i -E "s/^  sha256 \".*\"/  sha256 \"${SHA256}\"/" Casks/usagepet.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/usagepet.rb
+          git diff --cached --quiet && { echo "Cask already up to date"; exit 0; }
+          git commit -m "usagepet ${VERSION}"
+          git push

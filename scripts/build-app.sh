@@ -2,29 +2,36 @@
 # Builds ClaudeUsageWidget as a real, double-clickable .app bundle instead of
 # a bare command-line binary launched from Terminal.
 #
-#   ./scripts/build-app.sh            # build build/ClaudeUsageWidget.app
+#   ./scripts/build-app.sh            # build build/UsagePet.app
 #   ./scripts/build-app.sh --install  # also copy to ~/Applications and open it
+#   ./scripts/build-app.sh --zip      # also package build/UsagePet-<version>.zip (+ .sha256)
+#
+# Env: VERSION=0.3.0 overrides the version (CI sets it from the git tag).
+#      REQUIRE_UNIVERSAL=1 fails instead of falling back to a native-arch build.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-APP_NAME="ClaudeUsageWidget"
+APP_NAME="ClaudeUsageWidget"      # SwiftPM executable name (CFBundleExecutable)
+BUNDLE_NAME="UsagePet"           # .app folder name users see
 BUNDLE_ID="io.github.bqt1089.UsagePet"
 DISPLAY_NAME="UsagePet"
-SHORT_VERSION="0.2.0"
-BUILD_NUMBER="2"
+SHORT_VERSION="${VERSION:-0.3.0}"
+BUILD_NUMBER="${BUILD_NUMBER:-$(echo "$SHORT_VERSION" | awk -F. '{ printf "%d", $1*10000 + $2*100 + $3 }')}"
 
 BUILD_DIR="$ROOT_DIR/build"
-APP_DIR="$BUILD_DIR/$APP_NAME.app"
+APP_DIR="$BUILD_DIR/$BUNDLE_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 
 INSTALL=false
+ZIP=false
 for arg in "$@"; do
   case "$arg" in
     --install) INSTALL=true ;;
+    --zip) ZIP=true ;;
     *)
       echo "warning: ignoring unknown argument '$arg'" >&2
       ;;
@@ -39,6 +46,11 @@ BIN_PATH=""
 if swift build -c release --arch arm64 --arch x86_64 >"$BUILD_LOG" 2>&1; then
   BIN_PATH=".build/apple/Products/Release/$APP_NAME"
 else
+  if [ "${REQUIRE_UNIVERSAL:-0}" = "1" ]; then
+    cat "$BUILD_LOG" >&2 || true
+    echo "error: universal build failed and REQUIRE_UNIVERSAL=1" >&2
+    exit 1
+  fi
   log "Universal (arm64 + x86_64) build failed; falling back to a native-arch build."
   cat "$BUILD_LOG" >&2 || true
   swift build -c release
@@ -174,15 +186,28 @@ codesign --force --deep --sign - "$APP_DIR"
 
 if [ "$INSTALL" = true ]; then
   DEST_DIR="$HOME/Applications"
-  DEST_APP="$DEST_DIR/$APP_NAME.app"
+  DEST_APP="$DEST_DIR/$BUNDLE_NAME.app"
   mkdir -p "$DEST_DIR"
   log "Installing to $DEST_APP"
   # Quit any running copy (installed app or `swift run`), otherwise `open`
   # just re-focuses the old process and the new build never starts.
   pkill -x ClaudeUsageWidget 2>/dev/null && echo "==> Quit running ClaudeUsageWidget" && sleep 1 || true
+  if [ -d "$DEST_DIR/$APP_NAME.app" ]; then
+    log "Note: an older copy named $APP_NAME.app is still in $DEST_DIR — you can move it to the Trash."
+  fi
+  rm -rf "$DEST_APP"
   ditto "$APP_DIR" "$DEST_APP"
   open "$DEST_APP"
   log "Done: $DEST_APP"
 else
   log "Done: $APP_DIR"
+fi
+
+if [ "$ZIP" = true ]; then
+  ZIP_PATH="$BUILD_DIR/$BUNDLE_NAME-$SHORT_VERSION.zip"
+  rm -f "$ZIP_PATH" "$ZIP_PATH.sha256"
+  log "Packaging $ZIP_PATH"
+  ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ZIP_PATH"
+  (cd "$BUILD_DIR" && shasum -a 256 "$(basename "$ZIP_PATH")" > "$(basename "$ZIP_PATH").sha256")
+  log "SHA-256: $(cut -d' ' -f1 "$ZIP_PATH.sha256")"
 fi

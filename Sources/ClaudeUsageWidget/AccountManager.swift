@@ -84,6 +84,9 @@ final class AccountManager {
     }
 
     func useClaudeCodeLogin() {
+        #if os(macOS)
+        ClaudeCodeTokenProvider.interactiveUntil = Date().addingTimeInterval(120)
+        #endif
         setMode(.claudeCode)
     }
 

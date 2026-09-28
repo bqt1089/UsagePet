@@ -3,6 +3,9 @@ import Foundation
 public enum TokenProviderError: Error, Sendable, Equatable {
     case notFound
     case invalidCredentialsFile
+    /// `security` didn't answer in time — usually macOS is waiting on a
+    /// Keychain access prompt (e.g. after Claude Code rewrote its item).
+    case keychainTimedOut
 }
 
 public protocol TokenProvider: Sendable {
@@ -26,9 +29,12 @@ public struct ClaudeCodeTokenProvider: TokenProvider {
             return envToken
         }
 
+        var keychainError: Error?
         #if os(macOS)
-        if let keychainToken = try? readFromKeychain() {
-            return keychainToken
+        do {
+            return try readFromKeychain()
+        } catch {
+            keychainError = error
         }
         #endif
 
@@ -36,6 +42,9 @@ public struct ClaudeCodeTokenProvider: TokenProvider {
             return fileToken
         }
 
+        if let keychainError = keychainError as? TokenProviderError, keychainError == .keychainTimedOut {
+            throw keychainError
+        }
         throw TokenProviderError.notFound
     }
 
@@ -47,25 +56,60 @@ public struct ClaudeCodeTokenProvider: TokenProvider {
     }
 
     #if os(macOS)
+    private final class OutputBox: @unchecked Sendable { var data = Data() }
+
+    /// Until this date, Keychain reads wait long enough for the user to answer
+    /// a macOS access prompt. Set when the user explicitly clicks
+    /// "Use Claude Code login"; background polls keep the short timeout.
+    public static var interactiveUntil: Date?
+
+    private var keychainTimeout: TimeInterval {
+        if let until = Self.interactiveUntil, until > Date() { return 90 }
+        return 6
+    }
+
+    /// Reads Claude Code's Keychain item via `/usr/bin/security`.
+    /// Never blocks for more than `timeout`: if macOS is waiting on an access
+    /// prompt (common after Claude Code refreshes and rewrites its item), the
+    /// child process is killed and `.keychainTimedOut` is thrown instead of
+    /// hanging the whole poll loop.
     private func readFromKeychain() throws -> String {
+        let timeout = keychainTimeout
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
         process.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
 
         let outPipe = Pipe()
-        let errPipe = Pipe()
         process.standardOutput = outPipe
-        process.standardError = errPipe
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
 
+        let done = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in done.signal() }
         try process.run()
-        process.waitUntilExit()
+
+        // Drain stdout concurrently so a full pipe can never deadlock us.
+        let box = OutputBox()
+        let readDone = DispatchSemaphore(value: 0)
+        let handle = outPipe.fileHandleForReading
+        DispatchQueue.global(qos: .utility).async {
+            box.data = handle.readDataToEndOfFile()
+            readDone.signal()
+        }
+
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            _ = done.wait(timeout: .now() + 1)
+            try? outPipe.fileHandleForReading.close()
+            throw TokenProviderError.keychainTimedOut
+        }
+        _ = readDone.wait(timeout: .now() + 1)
+        try? outPipe.fileHandleForReading.close()
 
         guard process.terminationStatus == 0 else {
             throw TokenProviderError.notFound
         }
-
-        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-        guard var token = String(data: data, encoding: .utf8), !token.isEmpty else {
+        guard var token = String(data: box.data, encoding: .utf8), !token.isEmpty else {
             throw TokenProviderError.notFound
         }
         token = token.trimmingCharacters(in: .whitespacesAndNewlines)
