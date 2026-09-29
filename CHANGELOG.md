@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.4.1 — menu bar numbers
 
 ### Added
 - **Menu bar numbers**: show 5h (and weekly) % next to the menu bar icon, with a warning icon near the limit. You can also hide the floating widget and use the menu bar only.
