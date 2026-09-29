@@ -68,10 +68,9 @@ final class UsageStore {
 
     private static func makeClient(for accountManager: AccountManager) -> any UsageFetching {
         guard let fetcher = accountManager.makeUsageFetcher() else {
-            // No mode selected yet (or a linked mode with nothing usable,
-            // e.g. a missing claude.ai Keychain item); this client is never
-            // actually polled against (see `restartPolling`), but give it
-            // something inert.
+            // No mode selected yet (or a linked mode with nothing usable);
+            // this client is never actually polled against (see
+            // `restartPolling`), but give it something inert.
             return UsageClient(tokenProvider: StaticTokenProvider { nil })
         }
         return fetcher
@@ -437,8 +436,6 @@ final class UsageStore {
             return "Not signed in to Claude Code. Run `claude` and /login, then tap Use Claude Code login."
         case .manualToken:
             return "Saved token is invalid or expired. Paste a new one in Settings."
-        case .claudeWeb:
-            return "claude.ai session expired. Click Sign in with claude.ai again."
         }
     }
 

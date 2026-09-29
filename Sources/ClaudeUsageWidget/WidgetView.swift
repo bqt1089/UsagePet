@@ -66,8 +66,7 @@ struct WidgetRootView: View {
             }
             Divider()
             Button("Hide") {
-                UserDefaults.standard.set(false, forKey: "widgetVisible")
-                NotificationCenter.default.post(name: .usageWidgetVisibilityChanged, object: nil)
+                FloatingWidgetSetting.set(false)
             }
         }
     }
@@ -230,7 +229,7 @@ struct WidgetView: View {
         }
         return isLinked
             ? "No valid Claude Code login found. Sign in, then tap Use Claude Code login."
-            : "Reads your Claude Code login (read-only), or sign in with claude.ai instead."
+            : "Reads your Claude Code login (read-only)."
     }
 
     private var linkAccountSection: some View {
@@ -262,7 +261,6 @@ struct WidgetView: View {
             .disabled(isWaitingForClaudeCodeLogin)
 
             HStack(spacing: 10 * s) {
-                Button("Sign in with claude.ai…") { ClaudeWebLoginWindow.present(accountManager: store.accountManager) }
                 Button("More options") { requestShowSettings() }
             }
             .buttonStyle(.plain)

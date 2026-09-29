@@ -36,6 +36,8 @@ struct SettingsView: View {
     @AppStorage("backgroundOpacity") private var backgroundOpacity = 0.5
     @AppStorage("widgetScale") private var widgetScale = WidgetScale.default
     @AppStorage("theme") private var theme = WidgetTheme.pixel.rawValue
+    @AppStorage("menuBarStyle") private var menuBarStyle = MenuBarStyle.iconOnly
+    @AppStorage("showFloatingWidget") private var showFloatingWidget = true
     @State private var showDebugMoodPin = false
 
     var body: some View {
@@ -75,6 +77,28 @@ struct SettingsView: View {
                     }
                 }
 
+                VStack(alignment: .leading, spacing: 3) {
+                    Picker("Menu bar", selection: $menuBarStyle) {
+                        Text("Icon only").tag(MenuBarStyle.iconOnly)
+                        Text("5h %").tag(MenuBarStyle.session)
+                        Text("5h + Weekly %").tag(MenuBarStyle.sessionAndWeekly)
+                    }
+                    .frame(width: 260)
+                    Text("Show your usage right in the menu bar.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Toggle("Show floating widget", isOn: Binding(
+                        get: { showFloatingWidget },
+                        set: { FloatingWidgetSetting.set($0) }
+                    ))
+                    Text("Turn off to use UsagePet from the menu bar only.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 if theme == WidgetTheme.pixel.rawValue {
                     DisclosureGroup("Debug: pin a mood preview", isExpanded: $showDebugMoodPin) {
                         MoodPinPicker()
@@ -87,8 +111,34 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 480, maxWidth: 480, minHeight: 560)
+        .frame(minWidth: 480, maxWidth: 480, minHeight: 500)
         .onAppear { NSApp.activate(ignoringOtherApps: true) }
+    }
+}
+
+/// Single place that changes the persisted "show floating widget" setting,
+/// so the menu, the widget's context menu and Settings all behave the same.
+enum FloatingWidgetSetting {
+    static let key = "showFloatingWidget"
+
+    static var isOn: Bool {
+        UserDefaults.standard.object(forKey: key) as? Bool ?? true
+    }
+
+    /// Persists the setting and tells the app delegate to show/hide the panel.
+    /// Hiding the widget while the menu bar shows only an icon switches the
+    /// menu bar to numbers, so usage stays visible.
+    @MainActor
+    static func set(_ visible: Bool) {
+        let defaults = UserDefaults.standard
+        defaults.set(visible, forKey: key)
+        if !visible {
+            let raw = defaults.string(forKey: "menuBarStyle") ?? MenuBarStyle.iconOnly.rawValue
+            if raw == MenuBarStyle.iconOnly.rawValue {
+                defaults.set(MenuBarStyle.sessionAndWeekly.rawValue, forKey: "menuBarStyle")
+            }
+        }
+        NotificationCenter.default.post(name: .usageWidgetVisibilityChanged, object: nil)
     }
 }
 
@@ -141,7 +191,6 @@ private struct AccountSection: View {
 
             useClaudeCodeLoginRow
             signInToClaudeCodeRow
-            signInWithClaudeWebRow
             unlinkRow
 
             DisclosureGroup("Advanced: paste token", isExpanded: $showAdvanced) {
@@ -257,23 +306,6 @@ private struct AccountSection: View {
         return false
     }
 
-    private var signInWithClaudeWebRow: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Button("Sign in with claude.ai…") {
-                ClaudeWebLoginWindow.present(accountManager: accountManager)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Text(signInWithClaudeWebCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .help(signInWithClaudeWebCaption)
-    }
-
-    private let signInWithClaudeWebCaption =
-        "No Claude Code? Sign in to claude.ai in a UsagePet window. The web session lasts about 30 days, then you sign in again."
-
     private var unlinkRow: some View {
         VStack(alignment: .leading, spacing: 3) {
             Button("Unlink", role: .destructive) { accountManager.unlink() }
@@ -300,14 +332,6 @@ private struct AccountSection: View {
                 Text("Linked: \(email) · Claude Code").font(.headline)
             } else {
                 Text("Linked: Claude Code").font(.headline)
-            }
-        case .claudeWeb:
-            if let label = accountManager.accountInfo?.email
-                ?? accountManager.accountInfo?.organizationName
-                ?? accountManager.accountInfo?.displayName {
-                Text("Linked: \(label) · claude.ai").font(.headline)
-            } else {
-                Text("Linked: claude.ai").font(.headline)
             }
         }
     }
@@ -358,18 +382,36 @@ private struct LaunchAtLoginToggle: View {
     }
 }
 
-/// Small helper view so the label can read live state from the store without
-/// forcing the whole `MenuBarExtra` closure to re-evaluate more than needed.
+/// Menu bar label: icon plus optional usage numbers. Reads the observable
+/// store, so it refreshes whenever the snapshot changes.
 @MainActor
 private struct MenuBarLabel: View {
     @Environment(UsageStore.self) private var store
+    @AppStorage("menuBarStyle") private var menuBarStyle = MenuBarStyle.iconOnly
+
+    /// Session / weekly as 0...100, or nil when there is nothing to show.
+    private var percents: (session: Double?, weekly: Double?) {
+        if store.accountManager.mode == .notLinked || store.isNeedsLoginWithoutData {
+            return (nil, nil)
+        }
+        return (
+            store.snapshot?.session.map { $0.fraction * 100 },
+            store.snapshot?.weekly.map { $0.fraction * 100 }
+        )
+    }
 
     var body: some View {
-        let percentText = store.snapshot?.session.map { Formatting.percent($0.fraction) } ?? "--%"
-        Label {
-            Text(percentText)
-        } icon: {
-            Image(systemName: "gauge.with.dots.needle.33percent")
+        let values = percents
+        let warning = MenuBarFormatter.showsWarning(session: values.session, weekly: values.weekly)
+        let symbol = warning ? "exclamationmark.triangle.fill" : "gauge.with.dots.needle.33percent"
+        let text = MenuBarFormatter.label(session: values.session, weekly: values.weekly, style: menuBarStyle)
+        if text.isEmpty {
+            Image(systemName: symbol)
+        } else {
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                Text(text).monospacedDigit()
+            }
         }
     }
 }
@@ -377,24 +419,26 @@ private struct MenuBarLabel: View {
 @MainActor
 private struct MenuBarContents: View {
     @Environment(UsageStore.self) private var store
-    @AppStorage("widgetVisible") private var widgetVisible = true
+    @AppStorage("showFloatingWidget") private var showFloatingWidget = true
     @AppStorage("miniMode") private var miniMode = false
 
     var body: some View {
+        summaryBlock
+
+        Divider()
+
         accountRow
 
         Divider()
 
-        Button(widgetVisible ? "Hide Widget" : "Show Widget") {
-            widgetVisible.toggle()
-            NotificationCenter.default.post(name: .usageWidgetVisibilityChanged, object: nil)
+        Button(showFloatingWidget ? "Hide Widget" : "Show Widget") {
+            FloatingWidgetSetting.set(!showFloatingWidget)
         }
 
         Toggle("Mini Mode", isOn: $miniMode)
 
         Button("Reset Widget Position") {
-            UserDefaults.standard.set(true, forKey: "widgetVisible")
-            widgetVisible = true
+            FloatingWidgetSetting.set(true)
             NotificationCenter.default.post(name: .usageWidgetResetPosition, object: nil)
         }
 
@@ -418,13 +462,42 @@ private struct MenuBarContents: View {
     }
 
     @ViewBuilder
+    private var summaryBlock: some View {
+        if store.accountManager.mode == .notLinked {
+            Text("Not linked")
+        } else if case .needsLogin(let message) = store.status, store.snapshot == nil {
+            Text(message)
+        } else if let snapshot = store.snapshot {
+            Text(summaryLine(title: "5h", window: snapshot.session, weekly: false))
+            Text(summaryLine(title: "Weekly", window: snapshot.weekly, weekly: true))
+        } else {
+            Text("Loading usage…")
+        }
+    }
+
+    private func summaryLine(title: String, window: UsageWindow?, weekly: Bool) -> String {
+        guard let window else { return "\(title): \(MenuBarFormatter.placeholder)" }
+        var line = "\(title): \(Formatting.percent(window.fraction))"
+        if let resetsAt = window.resetsAt {
+            if weekly {
+                let formatter = DateFormatter()
+                formatter.setLocalizedDateFormatFromTemplate("EEEjmm")
+                line += " · resets \(formatter.string(from: resetsAt))"
+            } else {
+                line += " · resets in \(Formatting.countdown(to: resetsAt, now: store.now))"
+            }
+        }
+        return line
+    }
+
+    @ViewBuilder
     private var accountRow: some View {
         switch store.accountManager.mode {
         case .notLinked:
             SettingsLink {
                 Text("Not linked — Open Settings")
             }
-        case .claudeCode, .manualToken, .claudeWeb:
+        case .claudeCode, .manualToken:
             if let email = store.accountManager.accountInfo?.email {
                 Text("Linked: \(email)")
             } else {
@@ -453,8 +526,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = WidgetPanel(store: store)
         self.panel = panel
 
-        let visible = UserDefaults.standard.object(forKey: "widgetVisible") as? Bool ?? true
-        if visible {
+        // Migrate the old "widgetVisible" flag to "showFloatingWidget".
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: FloatingWidgetSetting.key) == nil,
+           let legacy = defaults.object(forKey: "widgetVisible") as? Bool {
+            defaults.set(legacy, forKey: FloatingWidgetSetting.key)
+        }
+
+        if FloatingWidgetSetting.isOn {
             panel.orderFrontRegardless()
         }
 
@@ -465,8 +544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let panel = self.panel else { return }
-                let isVisible = UserDefaults.standard.object(forKey: "widgetVisible") as? Bool ?? true
-                if isVisible {
+                if FloatingWidgetSetting.isOn {
                     panel.orderFrontRegardless()
                 } else {
                     panel.orderOut(nil)

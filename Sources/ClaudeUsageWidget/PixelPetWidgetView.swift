@@ -202,7 +202,6 @@ struct PixelPetWidgetView: View {
             .disabled(isWaitingForClaudeCodeLogin)
 
             HStack(spacing: 10 * s) {
-                Button("Sign in with claude.ai…") { ClaudeWebLoginWindow.present(accountManager: store.accountManager) }
                 Button("More options") { requestShowSettings() }
             }
             .buttonStyle(.plain)

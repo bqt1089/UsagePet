@@ -181,7 +181,7 @@ final class ClaudeCodeLoginFlow {
 
     private static func buildShellCommand(pidFilePath: String) -> String {
         """
-        clear; printf '\\n  UsagePet: sign in with your Claude subscription account.\\n  Choose "Claude account with subscription" if asked.\\n  This window closes automatically when done.\\n\\n'; if command -v claude >/dev/null 2>&1; then echo $$ > '\(pidFilePath)'; exec claude /login; else printf '  Claude Code is not installed.\\n  Install: curl -fsSL https://claude.ai/install.sh | bash\\n  or use "Sign in with claude.ai\u{2026}" in UsagePet.\\n'; fi
+        clear; printf '\\n  UsagePet: sign in with your Claude subscription account.\\n  Choose "Claude account with subscription" if asked.\\n  This window closes automatically when done.\\n\\n'; if command -v claude >/dev/null 2>&1; then echo $$ > '\(pidFilePath)'; exec claude /login; else printf '  Claude Code is not installed.\\n  Install: curl -fsSL https://claude.ai/install.sh | bash\\n'; fi
         """
     }
 

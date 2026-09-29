@@ -11,7 +11,6 @@ enum AccountMode: String, Equatable {
     case notLinked
     case claudeCode
     case manualToken
-    case claudeWeb
 }
 
 /// Best-effort, non-fatal account details surfaced in the UI. Any field may
@@ -23,25 +22,16 @@ struct AccountInfo: Equatable {
     var subscriptionType: String?
 }
 
-/// A captured claude.ai web session: the `sessionKey` cookie plus whatever
-/// we could best-effort resolve at sign-in time. Stored as JSON in this
-/// app's own Keychain item (see `AppKeychain.saveWebSession`); never
-/// logged or printed.
-struct ClaudeWebSession: Codable, Equatable {
-    var sessionKey: String
-    var orgId: String?
-    var orgName: String?
-    var email: String?
-    var displayName: String?
-    var userAgent: String?
-}
-
 /// Stores the user-pasted OAuth token in the app's own Keychain item, never
 /// the Claude Code one. The token is never logged or printed.
 enum AppKeychain {
     static let service = "io.github.bqt1089.UsagePet"
     static let account = "oauth-token"
-    static let webSessionAccount = "claude-web-session"
+
+    /// Account key of the pre-0.5.0 "Sign in with claude.ai" web session
+    /// Keychain item. The feature is gone; this constant only exists so
+    /// `deleteLegacyWebSession()` can clean up any leftover item.
+    private static let legacyWebSessionAccount = "claude-web-session"
 
     static func save(token: String) -> Bool {
         guard let data = token.data(using: .utf8) else { return false }
@@ -58,21 +48,12 @@ enum AppKeychain {
         deleteData(account: account)
     }
 
-    /// Saves a captured claude.ai web session as a small JSON blob under a
-    /// separate Keychain item, distinct from the OAuth-token item above.
-    static func saveWebSession(_ session: ClaudeWebSession) -> Bool {
-        guard let data = try? JSONEncoder().encode(session) else { return false }
-        return saveData(data, account: webSessionAccount)
-    }
-
-    static func loadWebSession() -> ClaudeWebSession? {
-        guard let data = loadData(account: webSessionAccount) else { return nil }
-        return try? JSONDecoder().decode(ClaudeWebSession.self, from: data)
-    }
-
+    /// Best-effort delete of the pre-0.5.0 "Sign in with claude.ai" session
+    /// Keychain item, if one is still around. Safe to call even when no such
+    /// item exists.
     @discardableResult
-    static func deleteWebSession() -> Bool {
-        deleteData(account: webSessionAccount)
+    static func deleteLegacyWebSession() -> Bool {
+        deleteData(account: legacyWebSessionAccount)
     }
 
     private static func saveData(_ data: Data, account: String) -> Bool {
@@ -125,8 +106,14 @@ final class AccountManager {
 
     init() {
         let raw = UserDefaults.standard.string(forKey: Self.modeKey) ?? AccountMode.notLinked.rawValue
+        // MIGRATION: builds before 0.5.0 could persist "claudeWeb" (the
+        // removed "Sign in with claude.ai" mode); treat that, or any other
+        // unrecognized raw value, as not linked.
         mode = AccountMode(rawValue: raw) ?? .notLinked
         accountInfo = Self.readAccountInfo(mode: mode)
+        // Best-effort cleanup of any session left behind by that removed
+        // feature, regardless of the mode we ended up in.
+        AppKeychain.deleteLegacyWebSession()
     }
 
     func useClaudeCodeLogin() {
@@ -151,24 +138,13 @@ final class AccountManager {
     /// cached account info the caller is holding.
     func unlink() {
         AppKeychain.delete()
-        AppKeychain.deleteWebSession()
+        AppKeychain.deleteLegacyWebSession()
         accountInfo = nil
         setMode(.notLinked)
     }
 
-    /// Called by `ClaudeWebLoginWindow` once a captured session has been
-    /// verified (org discovery + a first usage fetch both succeeded).
-    /// Saves it to this app's Keychain and switches to `.claudeWeb`.
-    @discardableResult
-    func linkClaudeWebSession(_ session: ClaudeWebSession) -> Bool {
-        guard AppKeychain.saveWebSession(session) else { return false }
-        setMode(.claudeWeb)
-        return true
-    }
-
     /// Builds the right usage fetcher for the current mode, or nil for
-    /// `.notLinked` (meaning: don't poll at all) or a `.claudeWeb` mode
-    /// whose Keychain item is somehow missing.
+    /// `.notLinked` (meaning: don't poll at all).
     func makeUsageFetcher() -> (any UsageFetching)? {
         switch mode {
         case .notLinked:
@@ -177,9 +153,6 @@ final class AccountManager {
             return UsageClient(tokenProvider: ClaudeCodeTokenProvider())
         case .manualToken:
             return UsageClient(tokenProvider: StaticTokenProvider { AppKeychain.load() })
-        case .claudeWeb:
-            guard let session = AppKeychain.loadWebSession() else { return nil }
-            return ClaudeWebUsageClient(sessionKey: session.sessionKey, orgId: session.orgId, userAgent: session.userAgent)
         }
     }
 
@@ -202,20 +175,7 @@ final class AccountManager {
             return nil
         case .claudeCode, .manualToken:
             return readClaudeCodeAccountInfo()
-        case .claudeWeb:
-            return readClaudeWebAccountInfo()
         }
-    }
-
-    /// Best-effort info for a linked claude.ai web session, read from this
-    /// app's own Keychain item (never the network).
-    private static func readClaudeWebAccountInfo() -> AccountInfo? {
-        guard let session = AppKeychain.loadWebSession() else { return nil }
-        var info = AccountInfo()
-        info.email = session.email
-        info.displayName = session.displayName
-        info.organizationName = session.orgName
-        return info
     }
 
     /// Reads `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) for

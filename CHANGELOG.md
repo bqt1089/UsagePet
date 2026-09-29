@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Menu bar numbers**: show 5h (and weekly) % next to the menu bar icon, with a warning icon near the limit. You can also hide the floating widget and use the menu bar only.
+
+### Removed
+- **Sign in with claude.ai**: Google/Apple sign-in doesn't work inside an embedded window, so this option is gone. Use *Sign in to Claude Code…* instead. Any saved claude.ai session is deleted on launch.
+
 ## v0.4.0 — more ways to link your account
 
 ### Added

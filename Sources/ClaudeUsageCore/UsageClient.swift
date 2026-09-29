@@ -3,6 +3,13 @@ import Foundation
 import FoundationNetworking
 #endif
 
+/// Anything that can fetch a `UsageSnapshot` on demand. `UsageStore` holds
+/// one of these so it doesn't need to know the concrete source of usage
+/// data.
+public protocol UsageFetching: Sendable {
+    func fetch(force: Bool) async throws -> UsageSnapshot
+}
+
 public enum UsageClientError: Error, Sendable {
     case unauthorized
     case rateLimited(retryAfter: TimeInterval?)
@@ -11,7 +18,7 @@ public enum UsageClientError: Error, Sendable {
     case parse
 }
 
-public actor UsageClient {
+public actor UsageClient: UsageFetching {
 
     private let tokenProvider: TokenProvider
     private let session: URLSession
