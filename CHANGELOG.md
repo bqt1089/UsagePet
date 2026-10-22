@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.2 — steadier connection
+
+### Changed
+- Usage now updates **every 5 minutes** instead of every minute. Polling once a minute made the usage endpoint answer with "rate limited" (sometimes for close to an hour). Refresh Now, waking your Mac and getting back online still update right away.
+
+### Fixed
+- **No more "offline" after long use, sleep or a network switch**: UsagePet reconnects as soon as the network is back instead of waiting out a long backoff, and no longer piles up dead connections over days of running.
+- **Rate limits are respected**: while the server says "retry later", nothing is sent — not on wake, Refresh Now or relaunch — so the limit actually clears. The widget shows *Rate limited · retry in …*.
+- **Expired Claude Code login is shown clearly**: if you mostly use the Claude desktop app, Claude Code's token can expire without being renewed. The widget now keeps your last numbers visible and says *Login expired* — run `claude` once and it picks up again automatically.
+- **Sign in to Claude Code…** no longer needs permission to control Terminal (it failed with “Not authorized to send Apple events”). Terminal still closes by itself when sign-in finishes, as long as your Terminal profile closes windows when the shell exits (the default).
+- A rare crash when reading Claude Code's login from the Keychain timed out.
+
 ## v0.4.1 — menu bar numbers
 
 ### Added
