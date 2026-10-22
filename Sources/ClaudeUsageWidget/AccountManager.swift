@@ -150,9 +150,9 @@ final class AccountManager {
         case .notLinked:
             return nil
         case .claudeCode:
-            return UsageClient(tokenProvider: ClaudeCodeTokenProvider())
+            return UsageClient(tokenProvider: ClaudeCodeTokenProvider(), rateLimitGate: .shared)
         case .manualToken:
-            return UsageClient(tokenProvider: StaticTokenProvider { AppKeychain.load() })
+            return UsageClient(tokenProvider: StaticTokenProvider { AppKeychain.load() }, rateLimitGate: .shared)
         }
     }
 

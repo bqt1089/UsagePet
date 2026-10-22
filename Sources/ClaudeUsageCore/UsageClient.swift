@@ -23,6 +23,7 @@ public actor UsageClient: UsageFetching {
     private let tokenProvider: TokenProvider
     private let session: URLSession
     private let minimumInterval: TimeInterval
+    private let rateLimitGate: RateLimitGate
 
     private var lastFetchDate: Date?
     private var lastSnapshot: UsageSnapshot?
@@ -42,8 +43,11 @@ public actor UsageClient: UsageFetching {
     /// True when this client created its own session and must invalidate it.
     private let ownsSession: Bool
 
-    public init(tokenProvider: TokenProvider, session: URLSession? = nil, minimumInterval: TimeInterval = 15) {
+    /// `rateLimitGate` defaults to a private in-memory gate; the app passes
+    /// `RateLimitGate.shared` so the window survives client rebuilds.
+    public init(tokenProvider: TokenProvider, session: URLSession? = nil, minimumInterval: TimeInterval = 15, rateLimitGate: RateLimitGate = RateLimitGate()) {
         self.tokenProvider = tokenProvider
+        self.rateLimitGate = rateLimitGate
         self.session = session ?? UsageClient.makeSession()
         self.ownsSession = session == nil
         self.minimumInterval = minimumInterval
@@ -73,6 +77,11 @@ public actor UsageClient: UsageFetching {
             throw UsageClientError.network(error)
         }
 
+        // Checked after the token so a login problem still surfaces first.
+        if let remaining = rateLimitGate.remaining(now: now) {
+            throw UsageClientError.rateLimited(retryAfter: remaining)
+        }
+
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -99,6 +108,7 @@ public actor UsageClient: UsageFetching {
             throw UsageClientError.unauthorized
         case 429:
             let retryAfter = parseRetryAfter(httpResponse.value(forHTTPHeaderField: "Retry-After"))
+            rateLimitGate.block(for: retryAfter ?? RateLimitGate.fallbackWindow, now: now)
             throw UsageClientError.rateLimited(retryAfter: retryAfter)
         default:
             throw UsageClientError.http(httpResponse.statusCode)
@@ -111,6 +121,7 @@ public actor UsageClient: UsageFetching {
             throw UsageClientError.parse
         }
 
+        rateLimitGate.clear()
         lastFetchDate = now
         lastSnapshot = snapshot
         return snapshot

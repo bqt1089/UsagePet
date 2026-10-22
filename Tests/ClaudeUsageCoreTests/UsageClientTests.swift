@@ -110,6 +110,38 @@ final class UsageClientTests: XCTestCase {
         }
     }
 
+    func testRateLimitWindowSurvivesClientRebuild() async throws {
+        StubURLProtocol.responses = [
+            StubURLProtocol.Response(statusCode: 429, headers: ["Retry-After": "600"], body: Data()),
+            StubURLProtocol.Response(statusCode: 500, headers: [:], body: Data())
+        ]
+        let gate = RateLimitGate()
+
+        let first = UsageClient(tokenProvider: FakeTokenProvider(token: "token"), session: makeSession(), rateLimitGate: gate)
+        do { _ = try await first.fetch(force: true); XCTFail("expected rate limited") } catch UsageClientError.rateLimited {}
+
+        // A rebuilt client (wake / watchdog / Refresh Now) must not send a
+        // request while the window is open: it would get the 500 stub.
+        let rebuilt = UsageClient(tokenProvider: FakeTokenProvider(token: "token"), session: makeSession(), rateLimitGate: gate)
+        do {
+            _ = try await rebuilt.fetch(force: true)
+            XCTFail("expected rate limited")
+        } catch UsageClientError.rateLimited(let retryAfter) {
+            XCTAssertGreaterThan(retryAfter ?? 0, 590)
+        }
+    }
+
+    func testRateLimitGateOpensAfterWindow() {
+        let gate = RateLimitGate()
+        let now = Date()
+        gate.block(for: 30, now: now)
+        XCTAssertNotNil(gate.remaining(now: now.addingTimeInterval(29)))
+        XCTAssertNil(gate.remaining(now: now.addingTimeInterval(31)))
+        gate.block(for: 30, now: now)
+        gate.clear()
+        XCTAssertNil(gate.remaining(now: now))
+    }
+
     func testMinimumIntervalReturnsCachedSnapshot() async throws {
         let fixtureURL = try XCTUnwrap(Bundle.module.url(forResource: "usage_sample", withExtension: "json"))
         let body = try Data(contentsOf: fixtureURL)
