@@ -16,7 +16,7 @@ struct PixelPetWidgetView: View {
 
     private var isStale: Bool {
         if case .stale = store.status { return true }
-        return false
+        return store.isTokenExpired
     }
     private var isLinked: Bool { store.accountManager.mode != .notLinked }
     private var needsLoginWithoutData: Bool {
@@ -99,6 +99,7 @@ struct PixelPetWidgetView: View {
         if let at = store.lastManualRefreshAt, store.now.timeIntervalSince(at) < 3 {
             return store.lastManualRefreshSucceeded ? "* Updated just now" : "! Refresh failed"
         }
+        if store.isTokenExpired { return "! Login expired" }
         return moodStatusLine(mood: mood, time: time)
     }
 
@@ -222,7 +223,7 @@ struct PixelPetWidgetView: View {
     private var statusColor: Color {
         switch store.status {
         case .ok: return UsageColor.green
-        case .loading, .stale: return UsageColor.yellow
+        case .loading, .stale, .tokenExpired: return UsageColor.yellow
         case .rateLimited, .error: return UsageColor.red
         case .needsLogin: return UsageColor.red
         }

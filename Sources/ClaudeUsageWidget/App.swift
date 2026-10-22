@@ -470,6 +470,9 @@ private struct MenuBarContents: View {
         } else if let snapshot = store.snapshot {
             Text(summaryLine(title: "5h", window: snapshot.session, weekly: false))
             Text(summaryLine(title: "Weekly", window: snapshot.weekly, weekly: true))
+            if store.isTokenExpired {
+                Text(UsageStore.tokenExpiredMessage)
+            }
         } else {
             Text("Loading usage…")
         }

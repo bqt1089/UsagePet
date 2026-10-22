@@ -6,6 +6,10 @@ public enum TokenProviderError: Error, Sendable, Equatable {
     /// `security` didn't answer in time — usually macOS is waiting on a
     /// Keychain access prompt (e.g. after Claude Code rewrote its item).
     case keychainTimedOut
+    /// The stored token's `expiresAt` has passed. Only Claude Code itself
+    /// renews it (next time `claude` runs); this app never touches the
+    /// refresh token, since rotating it would sign Claude Code out.
+    case expired
 }
 
 public protocol TokenProvider: Sendable {
@@ -38,12 +42,17 @@ public struct ClaudeCodeTokenProvider: TokenProvider {
         }
         #endif
 
-        if let fileToken = try? readFromCredentialsFile() {
-            return fileToken
+        var fileError: Error?
+        do {
+            return try readFromCredentialsFile()
+        } catch {
+            fileError = error
         }
 
-        if let keychainError = keychainError as? TokenProviderError, keychainError == .keychainTimedOut {
-            throw keychainError
+        for error in [keychainError, fileError] {
+            if let error = error as? TokenProviderError, error == .keychainTimedOut || error == .expired {
+                throw error
+            }
         }
         throw TokenProviderError.notFound
     }
@@ -92,19 +101,22 @@ public struct ClaudeCodeTokenProvider: TokenProvider {
         let box = OutputBox()
         let readDone = DispatchSemaphore(value: 0)
         let handle = outPipe.fileHandleForReading
+        // The reader owns closing the handle: closing it from here while the
+        // read is still blocked raises an ObjC exception and kills the app.
         DispatchQueue.global(qos: .utility).async {
             box.data = handle.readDataToEndOfFile()
+            try? handle.close()
             readDone.signal()
         }
 
         if done.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
             _ = done.wait(timeout: .now() + 1)
-            try? outPipe.fileHandleForReading.close()
             throw TokenProviderError.keychainTimedOut
         }
-        _ = readDone.wait(timeout: .now() + 1)
-        try? outPipe.fileHandleForReading.close()
+        guard readDone.wait(timeout: .now() + 1) == .success else {
+            throw TokenProviderError.keychainTimedOut
+        }
 
         guard process.terminationStatus == 0 else {
             throw TokenProviderError.notFound
@@ -116,8 +128,7 @@ public struct ClaudeCodeTokenProvider: TokenProvider {
 
         // Keychain value may itself be the credentials JSON blob.
         if token.hasPrefix("{"), let jsonData = token.data(using: .utf8) {
-            let credentials = try parseCredentials(jsonData)
-            return credentials.accessToken
+            return try Self.accessToken(fromCredentialsJSON: jsonData)
         }
 
         guard !token.isEmpty else { throw TokenProviderError.notFound }
@@ -140,17 +151,27 @@ public struct ClaudeCodeTokenProvider: TokenProvider {
     }
 
     private func readFromCredentialsFile() throws -> String {
-        let credentials = try loadCredentialsPayload()
+        let data = try Data(contentsOf: credentialsFileURL())
+        return try Self.accessToken(fromCredentialsJSON: data)
+    }
+
+    /// Extracts the access token from Claude Code's credentials JSON,
+    /// throwing `.expired` once its `expiresAt` has passed.
+    public static func accessToken(fromCredentialsJSON data: Data, now: Date = Date()) throws -> String {
+        let credentials = try parseCredentials(data)
+        if let expiresAt = credentials.expiresAt, expiresAt <= now {
+            throw TokenProviderError.expired
+        }
         return credentials.accessToken
     }
 
     private func loadCredentialsPayload() throws -> Credentials {
         let url = credentialsFileURL()
         let data = try Data(contentsOf: url)
-        return try parseCredentials(data)
+        return try Self.parseCredentials(data)
     }
 
-    private func parseCredentials(_ data: Data) throws -> Credentials {
+    private static func parseCredentials(_ data: Data) throws -> Credentials {
         guard
             let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let oauth = root["claudeAiOauth"] as? [String: Any],

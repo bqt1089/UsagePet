@@ -2,6 +2,7 @@
 import Foundation
 import AppKit
 import Observation
+import Network
 import ClaudeUsageCore
 
 /// Observable app-facing state for the usage widget. Owns the poll loop and
@@ -18,8 +19,13 @@ final class UsageStore {
         case stale(since: Date)
         case rateLimited(until: Date?)
         case needsLogin(message: String)
+        /// Claude Code's token expired while we still have numbers to show:
+        /// keep them visible (dimmed) until `claude` runs and renews it.
+        case tokenExpired(since: Date?)
         case error(String)
     }
+
+    static let tokenExpiredMessage = "Claude Code login expired. Run `claude` once to renew it; usage refreshes automatically."
 
     let accountManager: AccountManager
 
@@ -59,6 +65,9 @@ final class UsageStore {
     private var tickTimer: Timer?
     private var wakeObserver: NSObjectProtocol?
     private var accountModeObserver: NSObjectProtocol?
+    private var pathMonitor: NWPathMonitor?
+    private var networkWasDown = false
+    private var reconnectTask: Task<Void, Never>?
     private var started = false
 
     init(accountManager: AccountManager) {
@@ -139,9 +148,10 @@ final class UsageStore {
         ) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
-                guard self.accountManager.mode != .notLinked else { return }
-                // Fresh client + URLSession: connections from before sleep are often dead.
-                self.restartPolling()
+                // Fresh client + URLSession: connections from before sleep are
+                // often dead. Wait a moment: Wi-Fi is rarely back the instant
+                // the lid opens, and an early failure costs a 60 s backoff.
+                self.scheduleRestart(after: 3)
             }
         }
 
@@ -154,13 +164,47 @@ final class UsageStore {
         }
 
         startClaudeActiveMonitor()
+        startNetworkMonitor()
         restartPolling()
+    }
+
+    /// Restarts polling as soon as connectivity returns (Wi-Fi reconnect,
+    /// network switch, VPN up/down) instead of waiting out the backoff.
+    private func startNetworkMonitor() {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let isUp = path.status == .satisfied
+            Task { @MainActor [weak self] in self?.networkPathChanged(isUp: isUp) }
+        }
+        monitor.start(queue: DispatchQueue(label: "UsagePet.network-path"))
+        pathMonitor = monitor
+    }
+
+    private func networkPathChanged(isUp: Bool) {
+        guard isUp else {
+            networkWasDown = true
+            return
+        }
+        guard networkWasDown || lastErrorWasNetwork else { return }
+        networkWasDown = false
+        scheduleRestart(after: 2)
+    }
+
+    /// Debounced `restartPolling`, so a burst of wake / path events results
+    /// in one fresh client instead of several cancelled requests.
+    private func scheduleRestart(after delay: TimeInterval) {
+        reconnectTask?.cancel()
+        reconnectTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
+            guard let self, self.accountManager.mode != .notLinked else { return }
+            self.restartPolling()
+        }
     }
 
     /// Self-heal: if nothing has succeeded for a long time while linked,
     /// rebuild the client and restart the loop (covers stuck requests, a
     /// dead connection pool, or a loop that stopped for any reason).
-    private var lastWatchdogRestart = Date.distantPast
+    private var lastWatchdogRestart = Date()
     private func watchdog() {
         guard accountManager.mode != .notLinked else { return }
         let reference = lastUpdated ?? lastWatchdogRestart
@@ -177,6 +221,10 @@ final class UsageStore {
         claudeActiveTask = nil
         tickTimer?.invalidate()
         tickTimer = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        pathMonitor?.cancel()
+        pathMonitor = nil
         if let wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
         }
@@ -229,6 +277,11 @@ final class UsageStore {
     private func restartPolling() {
         pollTask?.cancel()
         pollTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        // Any restart counts for the watchdog, so it never cancels a fresh
+        // loop (e.g. the very first fetch at launch, or one right after wake).
+        lastWatchdogRestart = Date()
         scheduler = PollScheduler()
         client = Self.makeClient(for: accountManager)
 
@@ -284,6 +337,11 @@ final class UsageStore {
             status = .ok
             lastErrorWasNetwork = false
             return true
+        } catch UsageClientError.unauthorized where accountManager.mode == .claudeCode && snapshot != nil {
+            // The token worked before, so a 401 now is almost always expiry
+            // (a sign-out removes the token and lands in the case below).
+            markTokenExpired()
+            return false
         } catch UsageClientError.unauthorized {
             status = .needsLogin(message: needsLoginMessage())
             snapshot = nil
@@ -299,6 +357,9 @@ final class UsageStore {
             status = .needsLogin(message: "macOS is waiting for Keychain access. Click Use Claude Code login, then choose Always Allow.")
             lastErrorWasNetwork = false
             markStaleIfNeeded()
+            return false
+        } catch UsageClientError.network(let underlying) where (underlying as? TokenProviderError) == .expired {
+            markTokenExpired()
             return false
         } catch UsageClientError.network(let underlying) where underlying is TokenProviderError {
             // No token at all (e.g. logged out of Claude Code): that's a login
@@ -361,7 +422,13 @@ final class UsageStore {
             while !Task.isCancelled {
                 let active = Self.checkClaudeActive()
                 guard let self else { return }
-                await MainActor.run { self.claudeActive = active }
+                await MainActor.run {
+                    // Claude Code just ran, so it has likely renewed its token.
+                    if active, !self.claudeActive, self.isTokenExpired {
+                        self.scheduleRestart(after: 2)
+                    }
+                    self.claudeActive = active
+                }
                 do {
                     try await Task.sleep(nanoseconds: 10_000_000_000)
                 } catch {
@@ -439,6 +506,20 @@ final class UsageStore {
         }
     }
 
+    private func markTokenExpired() {
+        lastErrorWasNetwork = false
+        if snapshot == nil {
+            status = .needsLogin(message: Self.tokenExpiredMessage)
+        } else {
+            status = .tokenExpired(since: lastUpdated)
+        }
+    }
+
+    var isTokenExpired: Bool {
+        if case .tokenExpired = status { return true }
+        return false
+    }
+
     /// When a fetch fails but we already have a snapshot to show, prefer
     /// surfacing "stale" (keeping the old numbers visible) over blotting
     /// out the UI with a bare error, as long as nothing more specific
@@ -446,7 +527,7 @@ final class UsageStore {
     private func markStaleIfNeeded() {
         guard snapshot != nil, let lastUpdated else { return }
         switch status {
-        case .rateLimited, .needsLogin:
+        case .rateLimited, .needsLogin, .tokenExpired:
             return
         default:
             status = .stale(since: lastUpdated)

@@ -136,7 +136,7 @@ struct WidgetView: View {
 
     private var isStale: Bool {
         if case .stale = store.status { return true }
-        return false
+        return store.isTokenExpired
     }
 
     private var isLinked: Bool {
@@ -281,7 +281,7 @@ struct WidgetView: View {
     private var statusColor: Color {
         switch store.status {
         case .ok: return UsageColor.green
-        case .loading, .stale: return UsageColor.yellow
+        case .loading, .stale, .tokenExpired: return UsageColor.yellow
         case .rateLimited, .error: return UsageColor.red
         case .needsLogin: return UsageColor.red
         }
@@ -312,6 +312,8 @@ struct WidgetView: View {
             return "Rate limited"
         case .needsLogin(let message):
             return message
+        case .tokenExpired:
+            return UsageStore.tokenExpiredMessage
         case .error(let message):
             return message
         }

@@ -14,7 +14,7 @@ struct MiniPillView: View {
 
     private var isStale: Bool {
         if case .stale = store.status { return true }
-        return false
+        return store.isTokenExpired
     }
 
     var body: some View {

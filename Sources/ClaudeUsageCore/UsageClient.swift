@@ -39,10 +39,23 @@ public actor UsageClient: UsageFetching {
         return URLSession(configuration: config)
     }
 
-    public init(tokenProvider: TokenProvider, session: URLSession = UsageClient.makeSession(), minimumInterval: TimeInterval = 15) {
+    /// True when this client created its own session and must invalidate it.
+    private let ownsSession: Bool
+
+    public init(tokenProvider: TokenProvider, session: URLSession? = nil, minimumInterval: TimeInterval = 15) {
         self.tokenProvider = tokenProvider
-        self.session = session
+        self.session = session ?? UsageClient.makeSession()
+        self.ownsSession = session == nil
         self.minimumInterval = minimumInterval
+    }
+
+    /// A URLSession is never freed (nor its connection pool) until it is
+    /// invalidated. Clients are rebuilt on every wake / watchdog / Refresh
+    /// Now, so without this a long-running app piles up dead sessions.
+    deinit {
+        if ownsSession {
+            session.invalidateAndCancel()
+        }
     }
 
     public func fetch(force: Bool = false) async throws -> UsageSnapshot {

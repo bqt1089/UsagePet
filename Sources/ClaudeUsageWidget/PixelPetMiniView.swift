@@ -15,7 +15,7 @@ struct PixelPetMiniView: View {
 
     private var isStale: Bool {
         if case .stale = store.status { return true }
-        return false
+        return store.isTokenExpired
     }
     private var isLinked: Bool { store.accountManager.mode != .notLinked }
 
