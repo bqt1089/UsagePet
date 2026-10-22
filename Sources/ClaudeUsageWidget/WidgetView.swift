@@ -300,7 +300,7 @@ struct WidgetView: View {
         case .ok:
             if let lastUpdated = store.lastUpdated {
                 let seconds = max(0, Int(store.now.timeIntervalSince(lastUpdated)))
-                return "Updated \(seconds)s ago"
+                return seconds < 60 ? "Updated \(seconds)s ago" : "Updated \(seconds / 60)m ago"
             }
             return "Updated just now"
         case .stale(let since):

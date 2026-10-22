@@ -251,7 +251,7 @@ final class UsageStore {
     private(set) var lastManualRefreshSucceeded = false
 
     /// "Refresh Now": fresh client + connection pool, reset backoff, fetch
-    /// immediately, then resume the normal 60 s loop from this point. A plain
+    /// immediately, then resume the normal 5 min loop from this point. A plain
     /// fetch wasn't enough: while the loop was in a long backoff (or the old
     /// connection pool was dead) nothing visibly changed.
     func refreshNow() async {

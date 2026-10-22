@@ -21,7 +21,7 @@ or download the app from [Releases](https://github.com/bqt1089/UsagePet/releases
 
 ### 📊 See your usage
 - **Current (5h)** and **Weekly** limits as a percentage, with pixel bars and reset countdowns
-- Updates about once a minute and right after your Mac wakes. **Refresh Now** fetches immediately
+- Updates every 5 minutes and right after your Mac wakes. **Refresh Now** fetches immediately
 - The footer shows the status: *Refreshing…*, *Updated just now*, or *Refresh failed*
 
 ### 🐾 The pixel pet
@@ -146,7 +146,7 @@ UsagePet reads your usage through Claude Code's own login, and never asks for yo
 
 1. After you click **Use Claude Code login**, it reads the OAuth access token that Claude Code
    stores in your macOS Keychain.
-2. About once a minute it sends one read-only request to the same usage endpoint that
+2. Every 5 minutes it sends one read-only request to the same usage endpoint that
    Claude Code's `/usage` command uses.
 3. It shows the returned percentages and reset times. Countdowns tick locally.
 

@@ -4,7 +4,9 @@ import Foundation
 /// previous fetch attempt. No I/O, fully testable.
 public struct PollScheduler: Sendable {
 
-    public static let successInterval: TimeInterval = 60
+    /// Usage moves slowly and the endpoint rate-limits aggressively (429s
+    /// with Retry-After up to ~1h were seen at a 60 s cadence).
+    public static let successInterval: TimeInterval = 300
     public static let initialBackoff: TimeInterval = 60
     public static let maxBackoff: TimeInterval = 300
 

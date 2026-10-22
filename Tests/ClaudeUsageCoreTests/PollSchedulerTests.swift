@@ -5,8 +5,8 @@ final class PollSchedulerTests: XCTestCase {
 
     func testSuccessAlwaysReturnsSteadyInterval() {
         var scheduler = PollScheduler()
-        XCTAssertEqual(scheduler.nextDelayAfterSuccess(), 60)
-        XCTAssertEqual(scheduler.nextDelayAfterSuccess(), 60)
+        XCTAssertEqual(scheduler.nextDelayAfterSuccess(), 300)
+        XCTAssertEqual(scheduler.nextDelayAfterSuccess(), 300)
     }
 
     func testFailureBacksOffAndCaps() {
@@ -22,7 +22,7 @@ final class PollSchedulerTests: XCTestCase {
         var scheduler = PollScheduler()
         _ = scheduler.nextDelayAfterFailure() // 60 -> backoff now 120
         _ = scheduler.nextDelayAfterFailure() // 120 -> backoff now 240
-        XCTAssertEqual(scheduler.nextDelayAfterSuccess(), 60)
+        XCTAssertEqual(scheduler.nextDelayAfterSuccess(), 300)
         XCTAssertEqual(scheduler.nextDelayAfterFailure(), 60) // back to initial
     }
 
