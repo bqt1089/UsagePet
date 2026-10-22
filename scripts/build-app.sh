@@ -164,8 +164,6 @@ log "Writing Info.plist"
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>UsagePet opens Terminal to run claude /login and closes that window when sign-in finishes.</string>
 PLIST
   if [ "$ICON_ADDED" = true ]; then
     cat <<'PLIST'

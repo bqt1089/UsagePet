@@ -6,10 +6,11 @@ import Darwin
 import Observation
 import ClaudeUsageCore
 
-/// Drives "Sign in to Claude Code…": opens Terminal, runs `claude /login`
-/// there, watches Claude Code's own credentials for a change, then links
-/// this app to Claude Code mode and closes the Terminal window
-/// automatically. Never reads or stores the token itself — only a SHA-256
+/// Drives "Sign in to Claude Code…": opens a `.command` script in Terminal
+/// (no Apple Events / Automation permission needed), which runs
+/// `claude /login`; watches Claude Code's own credentials for a change, then
+/// links this app to Claude Code mode and ends `claude` so Terminal closes
+/// the window by itself. Never reads or stores the token itself — only a SHA-256
 /// fingerprint of it, kept in memory for the duration of one flow.
 @MainActor
 @Observable
@@ -32,7 +33,6 @@ final class ClaudeCodeLoginFlow {
     private weak var accountManager: AccountManager?
 
     private var pollTask: Task<Void, Never>?
-    private var terminalWindowId: Int?
 
     private static let pollInterval: TimeInterval = 2
     private static let timeout: TimeInterval = 300 // 5 minutes
@@ -51,7 +51,6 @@ final class ClaudeCodeLoginFlow {
     func start() {
         if case .waiting = state { return }
         pollTask?.cancel()
-        terminalWindowId = nil
         state = .waiting(startedAt: Date())
         pollTask = Task { [weak self] in
             await self?.run()
@@ -63,6 +62,7 @@ final class ClaudeCodeLoginFlow {
     func cancel() {
         pollTask?.cancel()
         pollTask = nil
+        try? FileManager.default.removeItem(at: Self.pidFileURL())
         state = .idle
     }
 
@@ -74,13 +74,27 @@ final class ClaudeCodeLoginFlow {
         let pidFile = Self.pidFileURL()
         Self.prepareForNewRun(pidFile: pidFile)
 
-        let shellCommand = Self.buildShellCommand(pidFilePath: pidFile.path)
-        switch Self.openTerminal(runningShellCommand: shellCommand) {
-        case .failure(let error):
-            state = .failed("Couldn't open Terminal: \(error.message)")
+        let scriptURL: URL
+        do {
+            scriptURL = try Self.writeLoginScript(pidFile: pidFile)
+        } catch {
+            state = .failed("Couldn't open Terminal: \(error.localizedDescription)")
             return
-        case .success(let windowId):
-            terminalWindowId = windowId
+        }
+        let terminalURL = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
+        NSWorkspace.shared.open(
+            [scriptURL],
+            withApplicationAt: terminalURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        ) { [weak self] _, error in
+            guard let error else { return }
+            let message = error.localizedDescription
+            Task { @MainActor [weak self] in
+                guard let self, case .waiting = self.state else { return }
+                self.pollTask?.cancel()
+                self.pollTask = nil
+                self.state = .failed("Couldn't open Terminal: \(message)")
+            }
         }
 
         ClaudeCodeTokenProvider.interactiveUntil = Date().addingTimeInterval(Self.timeout)
@@ -123,30 +137,23 @@ final class ClaudeCodeLoginFlow {
     }
 
     private func closeTerminal(pidFile: URL) async {
+        // End only the children of the script's shell (i.e. `claude`); the
+        // shell then continues to `exit 0` and Terminal closes the window.
         if let pidString = try? String(contentsOf: pidFile, encoding: .utf8) {
             let trimmed = pidString.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let pid = Int32(trimmed) {
-                kill(pid, SIGTERM)
+            if let pid = Int32(trimmed), pid > 1 {
+                let pkill = Process()
+                pkill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+                pkill.arguments = ["-TERM", "-P", String(pid)]
+                try? pkill.run()
             }
         }
 
         do {
             try await Task.sleep(nanoseconds: 500_000_000)
         } catch {
-            // still try to clean up below
+            // still clean up below
         }
-
-        if let windowId = terminalWindowId {
-            let closeScript = """
-            tell application "Terminal"
-                try
-                    close (every window whose id is \(windowId)) saving no
-                end try
-            end tell
-            """
-            _ = Self.runAppleScript(closeScript)
-        }
-        terminalWindowId = nil
         try? FileManager.default.removeItem(at: pidFile)
     }
 
@@ -179,57 +186,45 @@ final class ClaudeCodeLoginFlow {
         try? FileManager.default.removeItem(at: pidFile)
     }
 
-    private static func buildShellCommand(pidFilePath: String) -> String {
-        """
-        clear; printf '\\n  UsagePet: sign in with your Claude subscription account.\\n  Choose "Claude account with subscription" if asked.\\n  This window closes automatically when done.\\n\\n'; if command -v claude >/dev/null 2>&1; then echo $$ > '\(pidFilePath)'; exec claude /login; else printf '  Claude Code is not installed.\\n  Install: curl -fsSL https://claude.ai/install.sh | bash\\n'; fi
-        """
+    private static func scriptURL() -> URL {
+        pidFileURL().deletingLastPathComponent().appendingPathComponent("claude-login.command")
     }
 
-    /// Opens (or reuses) a Terminal window running `command`, returning the
-    /// window's id so it can be closed again once sign-in finishes.
-    private static func openTerminal(runningShellCommand command: String) -> Result<Int, AppleScriptError> {
-        let escaped = escapeForAppleScriptString(command)
-        let source = """
-        tell application "Terminal"
-            activate
-            set t to do script "\(escaped)"
-            try
-                return id of (first window whose tabs contains t)
-            on error
-                return id of front window
-            end try
-        end tell
+    private static func shellQuoted(_ raw: String) -> String {
+        "'" + raw.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Writes the executable `.command` script Terminal will run.
+    private static func writeLoginScript(pidFile: URL) throws -> URL {
+        let quotedPid = shellQuoted(pidFile.path)
+        let script = """
+        #!/bin/bash
+        clear
+        printf '\\n  UsagePet: sign in with your Claude subscription account.\\n  Choose "Claude account with subscription" if asked.\\n  This window closes by itself when you are done.\\n\\n'
+        export PATH="$HOME/.local/bin:$HOME/.claude/local:/opt/homebrew/bin:/usr/local/bin:$PATH"
+        if ! command -v claude >/dev/null 2>&1; then
+          printf '  Claude Code is not installed.\\n  Install it: curl -fsSL https://claude.ai/install.sh | bash\\n\\n'
+          read -n 1 -s -r -p "  Press any key to close."
+          exit 0
+        fi
+        echo $$ > \(quotedPid)
+        claude /login
+        rm -f \(quotedPid)
+        exit 0
+
         """
-        return runAppleScript(source)
-    }
-
-    private static func escapeForAppleScriptString(_ raw: String) -> String {
-        var out = raw.replacingOccurrences(of: "\\", with: "\\\\")
-        out = out.replacingOccurrences(of: "\"", with: "\\\"")
-        return out
-    }
-
-    @discardableResult
-    private static func runAppleScript(_ source: String) -> Result<Int, AppleScriptError> {
-        guard let script = NSAppleScript(source: source) else {
-            return .failure(AppleScriptError(message: "couldn't compile AppleScript"))
+        let url = scriptURL()
+        let fm = FileManager.default
+        try? fm.removeItem(at: url)
+        guard fm.createFile(
+            atPath: url.path,
+            contents: Data(script.utf8),
+            attributes: [.posixPermissions: 0o700]
+        ) else {
+            throw CocoaError(.fileWriteUnknown)
         }
-        var errorDict: NSDictionary?
-        let result = script.executeAndReturnError(&errorDict)
-        if let errorDict {
-            let message = (errorDict[NSAppleScript.errorMessage] as? String) ?? "unknown error"
-            return .failure(AppleScriptError(message: message))
-        }
-        let windowId = Int(result.int32Value)
-        guard windowId != 0 else {
-            return .failure(AppleScriptError(message: "no Terminal window id returned"))
-        }
-        return .success(windowId)
+        return url
     }
 }
 
 #endif
-
-struct AppleScriptError: Error {
-    let message: String
-}
