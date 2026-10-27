@@ -403,7 +403,9 @@ private struct MenuBarLabel: View {
     var body: some View {
         let values = percents
         let warning = MenuBarFormatter.showsWarning(session: values.session, weekly: values.weekly)
-        let symbol = warning ? "exclamationmark.triangle.fill" : "gauge.with.dots.needle.33percent"
+        // Old numbers win over the usage warning: they may no longer be true.
+        let symbol = store.staleNotice != nil ? "clock.badge.exclamationmark"
+            : warning ? "exclamationmark.triangle.fill" : "gauge.with.dots.needle.33percent"
         let text = MenuBarFormatter.label(session: values.session, weekly: values.weekly, style: menuBarStyle)
         if text.isEmpty {
             Image(systemName: symbol)
@@ -470,8 +472,11 @@ private struct MenuBarContents: View {
         } else if let snapshot = store.snapshot {
             Text(summaryLine(title: "5h", window: snapshot.session, weekly: false))
             Text(summaryLine(title: "Weekly", window: snapshot.weekly, weekly: true))
-            if store.isTokenExpired {
-                Text(UsageStore.tokenExpiredMessage)
+            if let updated = store.lastUpdatedText {
+                Text(updated)
+            }
+            if let notice = store.staleNotice {
+                Text(notice)
             }
         } else {
             Text("Loading usage…")

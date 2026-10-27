@@ -520,6 +520,36 @@ final class UsageStore {
         return false
     }
 
+    /// Why the numbers on screen are old, or nil when they are current (or
+    /// there are none). The menu bar keeps showing the last snapshot through
+    /// every failure, so without this a dead token looks like flat usage.
+    var staleNotice: String? {
+        guard snapshot != nil else { return nil }
+        switch status {
+        case .ok, .loading:
+            return nil
+        case .tokenExpired:
+            return Self.tokenExpiredMessage
+        case .rateLimited(let until):
+            if let until {
+                return "Rate limited · retry in \(Formatting.countdown(to: until, now: now))"
+            }
+            return "Rate limited"
+        case .stale:
+            return lastErrorWasNetwork ? "Offline · retrying" : "Couldn't refresh · retrying"
+        case .needsLogin(let message), .error(let message):
+            return message
+        }
+    }
+
+    /// "Updated 4d 23h ago" for the last successful fetch.
+    var lastUpdatedText: String? {
+        guard let lastUpdated else { return nil }
+        let seconds = now.timeIntervalSince(lastUpdated)
+        if seconds < 60 { return "Updated just now" }
+        return "Updated \(Formatting.countdown(to: now, now: lastUpdated)) ago"
+    }
+
     /// When a fetch fails but we already have a snapshot to show, prefer
     /// surfacing "stale" (keeping the old numbers visible) over blotting
     /// out the UI with a bare error, as long as nothing more specific
