@@ -68,6 +68,7 @@ final class UsageStore {
     private var pathMonitor: NWPathMonitor?
     private var networkWasDown = false
     private var reconnectTask: Task<Void, Never>?
+    private var appNapActivity: NSObjectProtocol?
     private var started = false
 
     init(accountManager: AccountManager) {
@@ -129,6 +130,14 @@ final class UsageStore {
     func start() {
         guard !started else { return }
         started = true
+
+        // With the floating widget hidden the app has no visible window, so
+        // macOS App Naps it: the poll sleep and the watchdog timer stall
+        // until the menu is opened, and the menu bar numbers freeze.
+        appNapActivity = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep,
+            reason: "Polling Claude usage for the menu bar"
+        )
 
         tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -233,6 +242,10 @@ final class UsageStore {
             NotificationCenter.default.removeObserver(accountModeObserver)
         }
         accountModeObserver = nil
+        if let appNapActivity {
+            ProcessInfo.processInfo.endActivity(appNapActivity)
+        }
+        appNapActivity = nil
         started = false
     }
 
@@ -421,8 +434,10 @@ final class UsageStore {
         claudeActiveTask = Task.detached { [weak self] in
             while !Task.isCancelled {
                 let active = Self.checkClaudeActive()
+                let accountInfo = AccountManager.readClaudeCodeAccountInfo()
                 guard let self else { return }
                 await MainActor.run {
+                    self.claudeCodeAccountObserved(accountInfo)
                     // Claude Code just ran, so it has likely renewed its token.
                     if active, !self.claudeActive, self.isTokenExpired {
                         self.scheduleRestart(after: 2)
@@ -436,6 +451,34 @@ final class UsageStore {
                 }
             }
         }
+    }
+
+    /// `claude /login` with another account (personal <-> org) swaps the
+    /// token under us while the mode stays `.claudeCode`. Without this the
+    /// old account's numbers stay up until the next 5 min poll, then the
+    /// switch looks like a usage reset, and a 401/403 from the new account
+    /// is misread as an expired token because a snapshot exists.
+    private func claudeCodeAccountObserved(_ info: AccountInfo?) {
+        guard accountManager.mode == .claudeCode else { return }
+        let previous = accountManager.accountInfo
+        guard info != previous else { return }
+        accountManager.updateAccountInfo(info)
+        guard let identity = info?.identity, let previousIdentity = previous?.identity,
+              identity != previousIdentity else { return }
+
+        snapshot = nil
+        lastUpdated = nil
+        detectedEvent = .none
+        eventExpiry = nil
+        lastErrorWasNetwork = false
+        // A 429 window belongs to the account that earned it.
+        RateLimitGate.shared.clear()
+        pollTask?.cancel()
+        pollTask = nil
+        status = .loading
+        // Claude Code may write ~/.claude.json a moment before the new
+        // token lands in the Keychain; don't fetch with the old one.
+        scheduleRestart(after: 3)
     }
 
     /// Runs entirely off the main actor. Only looks two directory levels

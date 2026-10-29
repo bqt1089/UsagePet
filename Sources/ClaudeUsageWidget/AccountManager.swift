@@ -20,6 +20,16 @@ struct AccountInfo: Equatable {
     var displayName: String?
     var organizationName: String?
     var subscriptionType: String?
+    var accountUuid: String?
+    var organizationUuid: String?
+
+    /// Which Claude account + organization the token belongs to. Changes
+    /// when the user runs `/login` with another account (e.g. personal ->
+    /// org) even though the app's mode stays `.claudeCode`.
+    var identity: String? {
+        guard accountUuid != nil || organizationUuid != nil else { return nil }
+        return "\(accountUuid ?? "")|\(organizationUuid ?? "")"
+    }
 }
 
 /// Stores the user-pasted OAuth token in the app's own Keychain item, never
@@ -160,6 +170,12 @@ final class AccountManager {
         accountInfo = Self.readAccountInfo(mode: mode)
     }
 
+    /// Applies account info read off the main thread (see `UsageStore`).
+    func updateAccountInfo(_ info: AccountInfo?) {
+        guard mode != .notLinked else { return }
+        accountInfo = info
+    }
+
     private func setMode(_ newMode: AccountMode) {
         mode = newMode
         UserDefaults.standard.set(newMode.rawValue, forKey: Self.modeKey)
@@ -182,7 +198,7 @@ final class AccountManager {
     /// `oauthAccount`, and best-effort the credentials file for
     /// `subscriptionType`. Never throws; missing/unreadable files just mean
     /// no info is shown.
-    private static func readClaudeCodeAccountInfo() -> AccountInfo? {
+    nonisolated static func readClaudeCodeAccountInfo() -> AccountInfo? {
         let fileManager = FileManager.default
         let configDir: URL
         if let dir = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"], !dir.isEmpty {
@@ -204,6 +220,8 @@ final class AccountManager {
         info.email = oauthAccount["emailAddress"] as? String
         info.displayName = oauthAccount["displayName"] as? String
         info.organizationName = oauthAccount["organizationName"] as? String
+        info.accountUuid = oauthAccount["accountUuid"] as? String
+        info.organizationUuid = oauthAccount["organizationUuid"] as? String
         info.subscriptionType = readSubscriptionType()
         return info
     }
@@ -252,7 +270,7 @@ final class AccountManager {
         return oauth["subscriptionType"] == nil
     }
 
-    private static func readSubscriptionType() -> String? {
+    nonisolated private static func readSubscriptionType() -> String? {
         let fileManager = FileManager.default
         let credentialsURL: URL
         if let dir = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"], !dir.isEmpty {
