@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.3 — no more freezing
+
+### Fixed
+- **Widget no longer freezes after running for hours**: the pet animation slowly piled up internal bookkeeping until UsagePet used 100% CPU, froze on click-and-hold and stopped updating the numbers. CPU now stays flat.
+- **Switching Claude Code accounts** (personal ↔ organization with `claude /login`) is picked up within seconds: the old account's numbers and email are cleared and the new account's usage is fetched, instead of showing stale numbers, a fake "reset" or *Login expired*.
+- **Menu bar keeps updating with the widget hidden**: macOS no longer puts UsagePet to sleep (App Nap) while it has no visible window.
+- **Old numbers are marked in the menu bar**: when usage can't be refreshed (expired login, offline, rate limited), the icon changes to a clock and the menu shows *Updated X ago* and why.
+
 ## v0.4.2 — steadier connection
 
 ### Changed
