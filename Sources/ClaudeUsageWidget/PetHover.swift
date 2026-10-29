@@ -76,6 +76,9 @@ final class PetHoverModel {
     /// Pet area in the hosting view's (top-left origin) coordinates.
     var petRect: CGRect = .zero
     private(set) var isHovering = false
+    /// Untracked copy of `isHovering` for `active(at:)`, which runs inside
+    /// the animation frames (see `PixelClock`).
+    @ObservationIgnored private var hovering = false
 
     @ObservationIgnored private var samples: [(t: Double, p: CGPoint)] = []
     @ObservationIgnored private var oneShot: (r: HoverReaction, start: Double)?
@@ -112,6 +115,7 @@ final class PetHoverModel {
 
         if inside && !isHovering {
             isHovering = true
+            hovering = true
             leftAt = nil
             hoverStart = t
             // Entry speed over the last ~90 ms: a fast sweep knocks the pet over.
@@ -130,6 +134,7 @@ final class PetHoverModel {
             greeting = next
         } else if !inside && isHovering {
             isHovering = false
+            hovering = false
             leftAt = t
         }
 
@@ -172,7 +177,7 @@ final class PetHoverModel {
             oneShot = nil
             hoverStart = time // restart the hover loop cleanly after a one-shot
         }
-        if !isHovering {
+        if !hovering {
             guard let leftAt, time - leftAt < 300 else { return nil }
         }
         let loopOf: (HoverReaction) -> Double = { r in
@@ -182,7 +187,7 @@ final class PetHoverModel {
         if time < tickleUntil { return (.tickle, loopOf(.tickle)) }
         // Held still on the pet for a while → cute.
         let lastMove = samples.last?.t ?? hoverStart
-        if isHovering && time - hoverStart > 1200 && time - lastMove > 1000 {
+        if hovering && time - hoverStart > 1200 && time - lastMove > 1000 {
             return (.cute, loopOf(.cute))
         }
         return (greeting, loopOf(greeting))

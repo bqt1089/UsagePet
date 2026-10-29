@@ -31,42 +31,42 @@ struct PixelPetWidgetView: View {
         let highMotion = mood == .celebrate || mood == .panic || PetHoverModel.shared.isHovering
         let interval: Double = reduceMotion ? (1.0 / 6.0) : (highMotion ? (1.0 / 24.0) : (1.0 / 12.0))
 
-        TimelineView(.animation(minimumInterval: interval, paused: false)) { timeline in
-            let t = PixelTime.milliseconds(timeline.date)
+        ZStack {
+            RoundedRectangle(cornerRadius: 22 * s, style: .continuous)
+                .fill(LCD.bezel)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22 * s, style: .continuous)
+                        .strokeBorder(LCD.bezelStroke, lineWidth: 2)
+                )
+                .opacity(backgroundOpacity)
 
-            ZStack {
-                RoundedRectangle(cornerRadius: 22 * s, style: .continuous)
-                    .fill(LCD.bezel)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22 * s, style: .continuous)
-                            .strokeBorder(LCD.bezelStroke, lineWidth: 2)
-                    )
+            content(mood: mood, interval: interval, reduceMotion: reduceMotion)
+                .padding(12 * s)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12 * s, style: .continuous).fill(LCD.screen)
+                        ScanlinesView()
+                    }
                     .opacity(backgroundOpacity)
-
-                content(mood: mood, time: t, reduceMotion: reduceMotion)
-                    .padding(12 * s)
-                    .background(
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 12 * s, style: .continuous).fill(LCD.screen)
-                            ScanlinesView()
-                        }
-                        .opacity(backgroundOpacity)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 12 * s, style: .continuous))
-                    .padding(10 * s)
-            }
-            .overlay(WeeklyBorderGlow(level: weeklyAlert, cornerRadius: 22 * s, time: t, reduceMotion: reduceMotion))
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12 * s, style: .continuous))
+                .padding(10 * s)
         }
+        .overlay(PixelClock(interval: interval) { t in
+            WeeklyBorderGlow(level: weeklyAlert, cornerRadius: 22 * s, time: t, reduceMotion: reduceMotion)
+        })
         .frame(width: 240 * s, height: 280 * s)
         .environment(\.colorScheme, .dark)
     }
 
     @ViewBuilder
-    private func content(mood: PetMood, time: Double, reduceMotion: Bool) -> some View {
+    private func content(mood: PetMood, interval: Double, reduceMotion: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8 * s) {
-            header(time: time)
+            header(mood: mood, interval: interval)
 
-            petArea(mood: mood, time: time, reduceMotion: reduceMotion)
+            PixelClock(interval: interval) { t in
+                petArea(mood: mood, time: t, reduceMotion: reduceMotion)
+            }
                 .reportPetFrame()
                 .frame(height: 92 * s)
 
@@ -88,26 +88,33 @@ struct PixelPetWidgetView: View {
                 linkAccountSection
             }
 
-            pixelText(footerLine(mood: mood, time: time), size: 11 * s, color: LCD.accent)
-                .lineLimit(1)
+            let notice = footerNotice
+            PixelClock(interval: interval) { t in
+                pixelText(notice ?? moodStatusLine(mood: mood, time: t), size: 11 * s, color: LCD.accent)
+                    .lineLimit(1)
+            }
         }
     }
 
-    /// Mood text normally; briefly shows refresh feedback after "Refresh Now".
-    private func footerLine(mood: PetMood, time: Double) -> String {
+    /// Refresh feedback after "Refresh Now" (or an expired login) shown in
+    /// place of the rotating mood text; nil means show the mood text.
+    private var footerNotice: String? {
         if store.isRefreshing { return "~ Refreshing…" }
         if let at = store.lastManualRefreshAt, store.now.timeIntervalSince(at) < 3 {
             return store.lastManualRefreshSucceeded ? "* Updated just now" : "! Refresh failed"
         }
         if store.isTokenExpired { return "! Login expired" }
-        return moodStatusLine(mood: mood, time: time)
+        return nil
     }
 
-    private func header(time: Double) -> some View {
-        HStack(spacing: 6 * s) {
+    private func header(mood: PetMood, interval: Double) -> some View {
+        let weekly = store.snapshot?.weekly?.fraction
+        return HStack(spacing: 6 * s) {
             pixelText("USAGE", size: 13 * s, bold: true, color: LCD.ink)
             Spacer()
-            BatteryIcon(weekly: store.snapshot?.weekly?.fraction, time: time, charging: store.currentMood == .love)
+            PixelClock(interval: interval) { t in
+                BatteryIcon(weekly: weekly, time: t, charging: mood == .love)
+            }
             Button(action: onMinimize) {
                 Image(systemName: "minus")
                     .font(.system(size: 9 * s, weight: .bold))

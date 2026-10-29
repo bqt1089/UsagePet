@@ -26,10 +26,9 @@ struct PixelPetMiniView: View {
         let highMotion = mood == .celebrate || mood == .panic || PetHoverModel.shared.isHovering
         let interval: Double = reduceMotion ? (1.0 / 6.0) : (highMotion ? (1.0 / 24.0) : (1.0 / 12.0))
 
-        TimelineView(.animation(minimumInterval: interval, paused: false)) { timeline in
-            let t = PixelTime.milliseconds(timeline.date)
+        let weekly = store.snapshot?.weekly?.fraction
 
-            ZStack {
+        ZStack {
                 RoundedRectangle(cornerRadius: 14 * s, style: .continuous)
                     .fill(LCD.bezel)
                     .overlay(
@@ -39,7 +38,9 @@ struct PixelPetMiniView: View {
                     .opacity(backgroundOpacity)
 
                 HStack(spacing: 8 * s) {
-                    petThumbnail(mood: mood, time: t, reduceMotion: reduceMotion)
+                    PixelClock(interval: interval) { t in
+                        petThumbnail(mood: mood, time: t, reduceMotion: reduceMotion)
+                    }
                 .reportPetFrame()
                         .frame(width: 40 * s, height: 40 * s)
 
@@ -71,13 +72,16 @@ struct PixelPetMiniView: View {
             }
             .overlay(alignment: .topTrailing) {
                 if isLinked {
-                    BatteryIcon(weekly: store.snapshot?.weekly?.fraction, time: t, charging: mood == .love, showsLabel: false, compact: true)
+                    PixelClock(interval: interval) { t in
+                        BatteryIcon(weekly: weekly, time: t, charging: mood == .love, showsLabel: false, compact: true)
+                    }
                         .padding(.top, 5 * s)
                         .padding(.trailing, 9 * s)
                 }
             }
-            .overlay(WeeklyBorderGlow(level: weeklyAlert, cornerRadius: 14 * s, time: t, reduceMotion: reduceMotion))
-        }
+            .overlay(PixelClock(interval: interval) { t in
+                WeeklyBorderGlow(level: weeklyAlert, cornerRadius: 14 * s, time: t, reduceMotion: reduceMotion)
+            })
         .frame(width: 200 * s, height: 56 * s)
         .environment(\.colorScheme, .dark)
     }

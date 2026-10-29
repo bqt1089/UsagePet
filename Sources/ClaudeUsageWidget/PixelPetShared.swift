@@ -12,6 +12,25 @@ enum PixelTime {
     }
 }
 
+/// Redraws `content` at animation rate, handing it the time in ms.
+///
+/// Keep `@Observable` reads (store, hover model, login flow) out of
+/// `content`: compute them in the parent's body and capture the values.
+/// On macOS 14 every observable read inside a `TimelineView` frame leaves an
+/// observation registration behind; at 12-24 fps they pile up for hours
+/// until the main thread spends all its time cancelling them (100% CPU, the
+/// widget freezes on click-and-hold).
+struct PixelClock<Content: View>: View {
+    let interval: Double
+    @ViewBuilder let content: (Double) -> Content
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: interval, paused: false)) { timeline in
+            content(PixelTime.milliseconds(timeline.date))
+        }
+    }
+}
+
 /// Convenience for drawing pixel-font text with `PixelFont`, matching the
 /// mockup's Silkscreen usage.
 func pixelText(_ s: String, size: CGFloat, bold: Bool = false, color: Color) -> Text {
