@@ -25,11 +25,15 @@ final class UsageStore {
         case error(String)
     }
 
-    static let tokenExpiredMessage = "Claude Code login expired. Run `claude` once to renew it; usage refreshes automatically."
+    static let tokenExpiredMessage = "Claude Code login expired. Renewing it automatically; if that fails, run `claude` once."
 
     let accountManager: AccountManager
 
-    private(set) var snapshot: UsageSnapshot?
+    /// Saved across relaunches, so a restart while the login is expired (or
+    /// offline) keeps the last numbers instead of blanking the menu bar.
+    private(set) var snapshot: UsageSnapshot? {
+        didSet { Self.saveSnapshot(snapshot) }
+    }
     private(set) var status: Status = .loading
     private(set) var lastUpdated: Date?
 
@@ -68,12 +72,30 @@ final class UsageStore {
     private var pathMonitor: NWPathMonitor?
     private var networkWasDown = false
     private var reconnectTask: Task<Void, Never>?
-    private var appNapActivity: NSObjectProtocol?
     private var started = false
 
     init(accountManager: AccountManager) {
         self.accountManager = accountManager
         self.client = Self.makeClient(for: accountManager)
+        if accountManager.mode != .notLinked, let saved = Self.loadSnapshot() {
+            snapshot = saved
+            lastUpdated = saved.fetchedAt
+        }
+    }
+
+    private static let snapshotKey = "lastUsageSnapshot"
+
+    private static func loadSnapshot() -> UsageSnapshot? {
+        guard let data = UserDefaults.standard.data(forKey: snapshotKey) else { return nil }
+        return try? JSONDecoder().decode(UsageSnapshot.self, from: data)
+    }
+
+    private static func saveSnapshot(_ snapshot: UsageSnapshot?) {
+        if let snapshot, let data = try? JSONEncoder().encode(snapshot) {
+            UserDefaults.standard.set(data, forKey: snapshotKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: snapshotKey)
+        }
     }
 
     private static func makeClient(for accountManager: AccountManager) -> any UsageFetching {
@@ -130,14 +152,6 @@ final class UsageStore {
     func start() {
         guard !started else { return }
         started = true
-
-        // With the floating widget hidden the app has no visible window, so
-        // macOS App Naps it: the poll sleep and the watchdog timer stall
-        // until the menu is opened, and the menu bar numbers freeze.
-        appNapActivity = ProcessInfo.processInfo.beginActivity(
-            options: .userInitiatedAllowingIdleSystemSleep,
-            reason: "Polling Claude usage for the menu bar"
-        )
 
         tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -242,10 +256,6 @@ final class UsageStore {
             NotificationCenter.default.removeObserver(accountModeObserver)
         }
         accountModeObserver = nil
-        if let appNapActivity {
-            ProcessInfo.processInfo.endActivity(appNapActivity)
-        }
-        appNapActivity = nil
         started = false
     }
 
@@ -555,6 +565,27 @@ final class UsageStore {
             status = .needsLogin(message: Self.tokenExpiredMessage)
         } else {
             status = .tokenExpired(since: lastUpdated)
+        }
+        renewExpiredLogin()
+    }
+
+    private var renewalTask: Task<Void, Never>?
+    private var lastRenewalAttempt: Date?
+    /// One try per half hour at most: if `claude` is missing or can't renew
+    /// (signed out, offline), retrying every poll would only burn time.
+    private static let renewalCooldown: TimeInterval = 30 * 60
+
+    /// Has Claude Code renew its own login (see `ClaudeCodeRenewal`), then
+    /// fetches again right away.
+    private func renewExpiredLogin() {
+        guard accountManager.mode == .claudeCode, renewalTask == nil else { return }
+        if let last = lastRenewalAttempt, Date().timeIntervalSince(last) < Self.renewalCooldown { return }
+        lastRenewalAttempt = Date()
+        renewalTask = Task { [weak self] in
+            let renewed = await ClaudeCodeRenewal.run()
+            guard let self else { return }
+            self.renewalTask = nil
+            if renewed { self.scheduleRestart(after: 1) }
         }
     }
 

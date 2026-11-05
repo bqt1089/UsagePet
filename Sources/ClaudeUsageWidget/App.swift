@@ -543,6 +543,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if FloatingWidgetSetting.isOn {
             panel.orderFrontRegardless()
+        } else {
+            panel.orderOut(nil) // drops the never-shown content (see WidgetPanel)
         }
 
         NotificationCenter.default.addObserver(

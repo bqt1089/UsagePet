@@ -27,6 +27,14 @@ struct PixelPetMiniView: View {
         let interval: Double = reduceMotion ? (1.0 / 6.0) : (highMotion ? (1.0 / 24.0) : (1.0 / 12.0))
 
         let weekly = store.snapshot?.weekly?.fraction
+        // Read once here: the ForEach rows below are evaluated lazily, and on
+        // macOS 14 an observable read there leaves a registration behind on
+        // every re-render (this body re-renders every second for resetText).
+        let session = store.snapshot?.session?.fraction ?? 0
+        let filled = filledSegments(session)
+        let sessionColor = UsageColor.forFraction(session, severity: .unknown)
+        let reset = resetText
+        let stale = isStale
 
         ZStack {
                 RoundedRectangle(cornerRadius: 14 * s, style: .continuous)
@@ -47,19 +55,19 @@ struct PixelPetMiniView: View {
                     if isLinked {
                         VStack(alignment: .leading, spacing: 3 * s) {
                             HStack(alignment: .firstTextBaseline) {
-                                pixelText(Formatting.percent(store.snapshot?.session?.fraction ?? 0), size: 14 * s, bold: true, color: LCD.ink)
+                                pixelText(Formatting.percent(session), size: 14 * s, bold: true, color: LCD.ink)
                                 Spacer()
                             }
                             HStack(spacing: 1 * s) {
                                 ForEach(0..<24, id: \.self) { i in
                                     Rectangle()
-                                        .fill(i < filledSegments ? UsageColor.forFraction(store.snapshot?.session?.fraction ?? 0, severity: .unknown) : LCD.barOff)
+                                        .fill(i < filled ? sessionColor : LCD.barOff)
                                         .frame(height: 5 * s)
                                 }
                             }
-                            pixelText(resetText, size: 7 * s, color: LCD.inkFaint)
+                            pixelText(reset, size: 7 * s, color: LCD.inkFaint)
                         }
-                        .opacity(isStale ? 0.5 : 1.0)
+                        .opacity(stale ? 0.5 : 1.0)
                     } else {
                         pixelText("NOT LINKED", size: 10 * s, color: LCD.inkDim)
                         Spacer()
@@ -142,9 +150,8 @@ struct PixelPetMiniView: View {
         .help("Expand")
     }
 
-    private var filledSegments: Int {
-        let fraction = store.snapshot?.session?.fraction ?? 0
-        return Int((min(max(fraction, 0), 1) * 24).rounded())
+    private func filledSegments(_ fraction: Double) -> Int {
+        Int((min(max(fraction, 0), 1) * 24).rounded())
     }
 
     private var resetText: String {

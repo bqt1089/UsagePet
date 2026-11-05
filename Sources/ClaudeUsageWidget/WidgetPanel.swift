@@ -10,6 +10,7 @@ final class WidgetPanel: NSPanel {
 
     private let store: UsageStore
     private var hostingView: NSHostingView<AnyView>?
+    private var content: AnyView = AnyView(EmptyView())
     private var refitTimer: Timer?
     private let hoverTracker = PetHoverTracker()
 
@@ -44,7 +45,8 @@ final class WidgetPanel: NSPanel {
         )
         .environment(store)
 
-        let hosting = NSHostingView(rootView: AnyView(root))
+        content = AnyView(root)
+        let hosting = NSHostingView(rootView: content)
         // We size the panel ourselves via onResize; letting NSHostingView
         // drive the window size fights with that (and can collapse it to 0).
         // Only publish intrinsic size (so we can measure it); we still move/resize
@@ -84,6 +86,22 @@ final class WidgetPanel: NSPanel {
         orderFrontRegardless()
     }
 
+    /// While hidden the SwiftUI content is swapped out. An ordered-out
+    /// window keeps rendering (pet animation, 1 s countdowns), and on
+    /// macOS 14 every re-render leaks a little observation bookkeeping;
+    /// menu-bar-only users paid that for a window nobody could see.
+    override func orderOut(_ sender: Any?) {
+        super.orderOut(sender)
+        hostingView?.rootView = AnyView(EmptyView())
+    }
+
+    override func orderFrontRegardless() {
+        if let hostingView, !isVisible {
+            hostingView.rootView = content
+        }
+        super.orderFrontRegardless()
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported for WidgetPanel")
     }
@@ -117,7 +135,7 @@ final class WidgetPanel: NSPanel {
     /// the hosting view directly is more reliable than trusting the
     /// PreferenceKey value, which can be stale after content switches.
     func refit() {
-        guard let hosting = hostingView else { return }
+        guard isVisible, let hosting = hostingView else { return }
         hosting.layoutSubtreeIfNeeded()
         var fitting = hosting.intrinsicContentSize
         if fitting.width <= 20 || fitting.height <= 20 || fitting.width == NSView.noIntrinsicMetric {

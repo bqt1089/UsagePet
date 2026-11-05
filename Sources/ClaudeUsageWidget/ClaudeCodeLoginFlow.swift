@@ -197,11 +197,12 @@ final class ClaudeCodeLoginFlow {
     /// Writes the executable `.command` script Terminal will run.
     private static func writeLoginScript(pidFile: URL) throws -> URL {
         let quotedPid = shellQuoted(pidFile.path)
+        let quotedPath = shellQuoted(ClaudeCodeRenewal.searchPath(existing: nil))
         let script = """
         #!/bin/bash
         clear
         printf '\\n  UsagePet: sign in with your Claude subscription account.\\n  Choose "Claude account with subscription" if asked.\\n  This window closes by itself when you are done.\\n\\n'
-        export PATH="$HOME/.local/bin:$HOME/.claude/local:/opt/homebrew/bin:/usr/local/bin:$PATH"
+        export PATH=\(quotedPath):"$PATH"
         if ! command -v claude >/dev/null 2>&1; then
           printf '  Claude Code is not installed.\\n  Install it: curl -fsSL https://claude.ai/install.sh | bash\\n\\n'
           read -n 1 -s -r -p "  Press any key to close."
