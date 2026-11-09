@@ -72,6 +72,7 @@ final class UsageStore {
     private var pathMonitor: NWPathMonitor?
     private var networkWasDown = false
     private var reconnectTask: Task<Void, Never>?
+    private var appNapActivity: NSObjectProtocol?
     private var started = false
 
     init(accountManager: AccountManager) {
@@ -152,6 +153,14 @@ final class UsageStore {
     func start() {
         guard !started else { return }
         started = true
+
+        // With the floating widget hidden the app has no visible window, so
+        // macOS App Naps it: the poll sleep and the watchdog timer stall
+        // until the menu is opened, and the menu bar numbers freeze.
+        appNapActivity = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep,
+            reason: "Polling Claude usage for the menu bar"
+        )
 
         tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -256,6 +265,10 @@ final class UsageStore {
             NotificationCenter.default.removeObserver(accountModeObserver)
         }
         accountModeObserver = nil
+        if let appNapActivity {
+            ProcessInfo.processInfo.endActivity(appNapActivity)
+        }
+        appNapActivity = nil
         started = false
     }
 
