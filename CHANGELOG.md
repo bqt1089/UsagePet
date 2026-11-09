@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.4 — logins renew themselves
+
+### Fixed
+- **Expired Claude Code logins renew automatically**: when the login token expires, UsagePet quietly asks Claude Code to refresh it (at most once every half hour), so you no longer have to run `claude` yourself to get the numbers back.
+- **Last numbers survive a relaunch**: the menu bar and widget show the last known usage (marked as stale) instead of going blank while the login is expired or you're offline.
+- **Lower memory and CPU while the widget is hidden**: the widget's content is unloaded when it's not on screen, fixing another slow build-up on macOS 14.
+
 ## v0.4.3 — no more freezing
 
 ### Fixed
